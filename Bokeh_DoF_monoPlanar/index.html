@@ -1,0 +1,3517 @@
+<html>
+
+
+<head>
+	<title>3D Scene Test Bokeh DoF </title>
+	<meta http-equiv="content-type" content="text/html; charset=ISO-8859-1">
+
+	<!--<script type="text/javascript" src="glMatrix-0.9.5-modified.min.js"></script>-->
+	<script type="text/javascript" src="webgl-utils.js"></script>
+	<script type="text/javascript" src="gl-matrix-test.js"></script>
+    <script type="text/javascript" src="basicSceneObjects.js"></script>
+
+	<script id="per-fragment-lighting-fs" type="x-shader/x-fragment">
+		precision mediump float;
+
+		varying vec2 vTextureCoord;
+		varying vec3 vTransformedNormal;
+		varying vec4 vPosition;
+
+		uniform float uMaterialShininess;
+
+		uniform bool uShowSpecularHighlights;
+		uniform bool uUseLighting;
+		uniform int uUseTextures;
+
+		uniform vec3 uAmbientColor;
+
+		uniform vec3 uPointLightingLocation;
+		uniform vec3 uPointLightingSpecularColor;
+		uniform vec3 uPointLightingDiffuseColor;
+
+		uniform sampler2D uSampler;
+
+		void main(void) {
+			bool i = true;
+
+			vec3 lightWeighting;
+			if (!uUseLighting) {
+				lightWeighting = vec3(1.0, 1.0, 1.0);
+			} else {
+				vec3 lightDirection = normalize(uPointLightingLocation - vPosition.xyz);
+				vec3 normal = normalize(vTransformedNormal);
+
+				float specularLightWeighting = 0.0;
+				if( uShowSpecularHighlights ) {
+					vec3 eyeDirection = normalize(-vPosition.xyz);
+					vec3 reflectionDirection = reflect(-lightDirection, normal);
+
+					specularLightWeighting = pow(max(dot(reflectionDirection, eyeDirection), 0.0), uMaterialShininess);
+				}
+
+				float diffuseLightWeighting = max(dot(normal, lightDirection), 0.0);
+				lightWeighting = uAmbientColor + uPointLightingSpecularColor * specularLightWeighting + uPointLightingDiffuseColor * diffuseLightWeighting;
+			}
+
+			vec4 fragmentColor;
+			if (uUseTextures == 1) {
+				//gl_FragColor = vec4(1.0, 0.0, 0.0, 1.0); return;
+				fragmentColor = texture2D(uSampler, vec2(vTextureCoord.s, vTextureCoord.t));
+			} else {
+				//gl_FragColor = vec4(0.5, 0.5, 1.0, 1.0); return;
+				fragmentColor = vec4(1.0, 1.0, 1.0, 1.0);
+			}
+			gl_FragColor = vec4(fragmentColor.rgb * 3.0* lightWeighting, fragmentColor.a);
+
+            //gl_FragColor = vec4(vTextureCoord, 0.0, 1.0); return;
+            //gl_FragColor = vec4(fragmentColor.rgb, fragmentColor.a); return;
+		}
+	</script>
+
+    <script id="lighting-phong-fs" type="x-shader/x-fragment">
+        precision mediump float;
+
+        varying vec3 vFragPos;
+        varying vec3 vNormal;
+        varying vec2 vTextureCoord;
+
+        uniform vec3 lightPos;
+        uniform vec3 viewPos;
+        uniform vec3 lightColor;
+        //uniform vec3 objectColor;
+
+        uniform int uUseTexture;
+
+        uniform int uDisableLighting;
+
+        struct Material {
+            sampler2D diffuse;
+            float shininess;
+            int hasSpecular;
+        };
+
+        struct DirLight {
+            vec3 direction;
+
+            vec3 ambient;
+            vec3 diffuse;
+            vec3 specular;
+        };
+
+        struct PointLight {
+            vec3 position;
+
+            float constant;
+            float linear;
+            float quadratic;
+
+            vec3 ambient;
+            vec3 diffuse;
+            vec3 specular;
+        };
+        #define NR_POINT_LIGHTS 1
+        uniform PointLight pointLights[NR_POINT_LIGHTS];
+
+        uniform DirLight dirLight;
+        uniform Material material;
+
+
+        vec3 CalcDirLight(DirLight light, vec3 normal, vec3 viewDir);
+        vec3 CalcPointLight(PointLight light, vec3 normal, vec3 fragPos, vec3 viewDir);
+
+        void main()  
+        {   
+            vec3 result = vec3(1.0, 1.0, 1.0);
+            if(uDisableLighting == 0) 
+            {
+                vec3 norm = normalize(vNormal);
+                vec3 lightDir = normalize(lightPos - vFragPos);
+                vec3 viewDir = normalize(viewPos - vFragPos);
+            
+                result = vec3(0.0, 0.0, 0.0);
+                result += CalcDirLight(dirLight, norm, viewDir);
+
+                for (int i = 0; i < NR_POINT_LIGHTS; i++) {
+                    result += CalcPointLight(pointLights[i], norm, vFragPos, viewDir);
+                }
+            } 
+            
+            gl_FragColor = vec4(result, 1.0);
+        }
+
+        vec3 CalcDirLight(DirLight light, vec3 normal, vec3 viewDir) {
+            vec3 lightDir = normalize(-light.direction);
+            // diffuse shading
+            float diff = max(dot(normal, lightDir), 0.0);
+            // specular shading 
+            vec3 reflectDir = reflect(-lightDir, normal);
+            float spec = 0.0;
+            if (material.hasSpecular == 1) {
+                spec = pow(max(dot(viewDir, reflectDir), 0.0), material.shininess);    
+            }
+            
+            // combine results
+            vec3 ambient;
+            vec3 diffuse;
+
+            if (uUseTexture == 1) {
+                ambient = light.ambient * vec3(texture2D(material.diffuse, vTextureCoord));
+                diffuse = light.diffuse * diff * vec3(texture2D(material.diffuse, vTextureCoord));    
+            } else {
+                ambient = light.ambient * light.diffuse;
+                diffuse = light.diffuse * diff * light.diffuse;    
+            }
+           
+            vec3 specular = light.specular * spec * lightColor;
+
+            return (ambient + diffuse + specular);
+            //return specular;
+        }
+
+        vec3 CalcPointLight(PointLight light, vec3 normal, vec3 fragPos, vec3 viewDir) {
+            vec3 lightDir = normalize(light.position - fragPos);
+            // diffuse shading
+            float diff = max(dot(normal, lightDir), 0.0);
+            // specular shading
+            vec3 reflectDir = reflect(-lightDir, normal);
+            float spec = 0.0;
+            if (material.hasSpecular == 1) {
+                spec = pow(max(dot(viewDir, reflectDir), 0.0), material.shininess);
+            }
+            // attenuation
+            float distance = length(light.position - fragPos);
+            float attenuation = 1.0 / (light.constant + light.linear * distance + light.quadratic * (distance * distance));
+
+            // combine results
+            vec3 ambient = light.ambient * light.diffuse;
+            vec3 diffuse = light.diffuse * diff * light.diffuse;
+            vec3 specular = light.specular * spec * lightColor;
+            ambient *= attenuation;
+            diffuse *= attenuation;
+            specular *= attenuation;
+            return (ambient + diffuse + specular);
+            //return ambient;
+            //return diffuse;
+            //return specular;
+        }
+
+
+        
+    </script>
+
+    <script id="lighting-phong-vs" type="x-shader/x-vertex">
+       attribute vec3 aVertexPosition;
+       attribute vec3 aVertexNormal;
+       attribute vec2 aTextureCoord;
+
+       varying vec3 vNormal;
+       varying vec3 vFragPos;
+       varying vec2 vTextureCoord;
+
+       uniform mat4 uMMatrix;
+       uniform mat4 uVMatrix;
+       uniform mat4 uPMatrix;
+       //uniform mat3 uNMatrix;
+
+       void main(void)  {
+            gl_Position = uPMatrix * uVMatrix * uMMatrix * vec4(aVertexPosition, 1.0);
+            vFragPos = vec3(uMMatrix * vec4(aVertexPosition, 1.0));
+            vTextureCoord = aTextureCoord;
+            vNormal = aVertexNormal;
+       }
+
+    </script>
+
+
+
+
+
+	<script id="per-fragment-lighting-vs" type="x-shader/x-vertex">
+		attribute vec3 aVertexPosition;
+		attribute vec3 aVertexNormal;
+		attribute vec2 aTextureCoord;
+
+		uniform mat4 uMMatrix;
+		uniform mat4 uVMatrix;
+		uniform mat4 uPMatrix;
+		uniform mat3 uNMatrix;
+
+		varying vec2 vTextureCoord;
+		varying vec3 vTransformedNormal;
+		varying vec4 vPosition;
+
+		void main(void) {
+			vPosition = uVMatrix * uMMatrix * vec4(aVertexPosition, 1.0);
+			gl_Position = uPMatrix * vPosition;
+
+			//gl_Position = vec4(aVertexPosition, 1.0);
+			vTextureCoord = aTextureCoord;
+			vTransformedNormal = uNMatrix * aVertexNormal;
+		}
+	</script>
+
+	<script id="fragment-focal-plane-fs" type="x-shader/x-fragment">
+		precision mediump float;
+
+		void main(void) {
+			gl_FragColor = vec4(1.0, 1.0, 0.0, 0.5);
+		}
+	</script>
+
+	<script id="fragment-focal-plane-vs" type="x-shader/x-vertex">
+		attribute vec3 aVertexPosition;
+
+		uniform mat4 uMMatrix;
+		uniform mat4 uVMatrix;
+		uniform mat4 uPMatrix;
+
+		void main(void) {
+			gl_Position = uPMatrix * uVMatrix * uMMatrix * vec4(aVertexPosition, 1.0);
+		}
+	</script>
+
+	<script id="fragment-depth-fs" type="x-shader/x-fragment">
+		precision mediump float;
+
+		uniform float uNear;
+		uniform float uFar;
+
+		float LinearizeDepth(float depth) 
+		{
+			float z = depth * 2.0 - 1.0; // back to NDC
+			return (2.0 * uNear * uFar) / (uFar + uNear - z * (uFar - uNear));
+		}
+
+		void main(void) {
+			float depth = LinearizeDepth(gl_FragCoord.z) / uFar; // divide by far for demostration
+			gl_FragColor = vec4(vec3(depth), 1.0);
+			//gl_FragColor = vec4(1.0, 0.0, 0.0, 1.0);
+		}
+	</script>
+
+	<script id="fragment-depth-vs" type="x-shader/x-vertex">
+		attribute vec3 aVertexPosition;
+
+		uniform mat4 uMMatrix;
+		uniform mat4 uVMatrix;
+		uniform mat4 uPMatrix;
+
+		void main(void) {
+			gl_Position = uPMatrix * uVMatrix * uMMatrix * vec4(aVertexPosition, 1.0);
+		}
+	</script>
+
+	<script id="focal-depth-fs" type="x-shader/x-fragment">
+		precision mediump float;
+
+		uniform float uFar;
+
+		uniform vec3 uCameraFront;
+		uniform vec3 uCameraPos;
+
+		uniform float uFDistance;
+
+		varying vec3 vFragPos;
+
+		void main(void) {
+			//gl_FragColor = vec4(vec3(1.0, 0.0, 0.0), 1.0); return;
+			//gl_FragColor = vec4(vec3(uFDistance/uFar), 1.0); return;
+			vec3 colorOut = vec3(0.0, 1.0, 0.0);
+			vec3 cameraFront = normalize(uCameraFront);
+
+			vec3 v_proj = (dot(vFragPos, cameraFront)/dot(cameraFront, cameraFront))*cameraFront;
+			//float d_proj = length(cameraFront-v_proj);
+			vec3 v_fragPosCam = vFragPos - uCameraPos;
+			float d_proj = dot(cameraFront, v_fragPosCam);
+
+
+			// Calculation 1
+			float aux = d_proj/uFDistance;
+
+			if (aux < 1.0) {
+				float color = 1.0 - aux;
+				colorOut = vec3(color);
+			} else {
+
+				aux = (d_proj - uFDistance)/(uFar - uFDistance);
+				colorOut = vec3(aux);
+				//colorOut = vec3(1.0, 0.0, 0.0);
+			}
+
+			gl_FragColor = vec4(vec3(d_proj)/uFDistance, 1.0);
+			gl_FragColor = vec4(colorOut, 1.0);
+		}
+	</script>
+
+	<script id="focal-depth-vs" type="x-shader/x-vertex">
+	attribute vec3 aVertexPosition;
+
+	uniform mat4 uMMatrix;
+	uniform mat4 uVMatrix;
+	uniform mat4 uPMatrix;
+
+	varying vec3 vFragPos;
+
+	void main(void) {
+		gl_Position = uPMatrix * uVMatrix * uMMatrix * vec4(aVertexPosition, 1.0);
+		vFragPos = vec3(uMMatrix * vec4(aVertexPosition, 1.0));
+	}
+	</script>
+
+
+    <script id="debug-shader-fs" type="x-shader/x-fragment">
+        precision mediump float;
+
+
+        varying vec3 vTransformedNormal;
+        varying vec4 vPosition;
+
+        void main(void) {
+            gl_FragColor = vec4(1.0, 0.0, 0.0, 1.0);
+        }
+
+    </script>
+
+    <script id="debug-shader-vs" type="x-shader/x-vertex">
+        attribute vec3 aVertexPosition;
+        attribute vec3 aVertexNormal;
+
+        uniform mat4 uMMatrix;
+        uniform mat4 uVMatrix;
+        uniform mat4 uPMatrix;
+        uniform mat3 uNMatrix;
+
+        varying vec3 vTransformedNormal;
+        varying vec4 vPosition;
+
+        void main(void) {
+            vPosition = uVMatrix * uMMatrix * vec4(aVertexPosition, 1.0);
+            gl_Position = uPMatrix * vPosition;
+            vTransformedNormal = uNMatrix * aVertexNormal;
+        }
+
+    </script>
+
+	<script id="shader-fs-bokeh-BufferA" type="x-shader/x-fragment">
+        precision mediump float;
+
+        //screen filling texture
+        uniform sampler2D uSampler;
+
+        uniform sampler2D uSamplerFocalDepth;
+
+        uniform float bokehStrength;
+
+        varying vec2 vTextureCoord;
+
+        #define M_PI 3.1415926535897932384626433832795
+
+        #define USE_RANDOM
+
+        const vec2 blurdir = vec2(0.0, 1.0);
+        // ===
+        const float blurdist_px = 64.0;
+        const int NUM_SAMPLES = 16;
+
+        const float THRESHOLD = 0.1;
+        const float MULT = 2.0;
+
+        uniform vec3 iResolution; // The viewport resolution (z is pixel aspect ratio, usually 1.0)
+        uniform float iTime; // Current time in seconds
+
+        uniform int uEnableDepthBokeh;
+
+        struct MedianStruct 
+        {
+            float greyval;
+            vec3 color_rgb;
+        };
+
+        //#define GAMMA_SRGB
+        #if defined( GAMMA_SRGB )
+        // see http://www.opengl.org/registry/specs/ARB/framebuffer_sRGB.txt
+        vec3 srgb2lin( vec3 cs )
+        {
+            vec3 c_lo = cs / 12.92;
+            vec3 c_hi = pow( (cs + 0.055) / 1.055, vec3(2.4) );
+            vec3 s = step(vec3(0.04045), cs);
+            return mix( c_lo, c_hi, s );
+        }
+
+        vec3 lin2srgb( vec3 cl )
+        {
+            // cl = clamp( cl, 0.0, 1.0 );
+            vec3 c_lo = 12.92 * cl;
+            vec3 c_hi = 1.055 * pow(cl, vec3(0.41666)) - 0.055;
+            vec3 s = step( vec3(0.0031308), cl );
+            return mix( c_lo, c_hi, s );
+        }
+        #else 
+        vec3 srgb2lin(vec3 c) { return c*c; }
+        vec3 lin2srgb(vec3 c) { return sqrt(c); }
+        #endif // GAMMA_SRGB
+
+        // note: uniform pdf ranf [0;1[
+        float hash12n(vec2 p) 
+        {
+            p = fract(p * vec2(5.3987, 5.4421));
+            p += dot(p.yx, p.xy + vec2(21.5351, 14.3137));
+            return fract(p.x * p.y * 95.4307);
+        }
+
+        vec4 pattern( vec2 p )
+        {
+            float aspect = iResolution.x/iResolution.y;
+            float p0 = step(abs(p.x - 0.125), 0.01) * step(abs(p.y - 0.27), 0.01);
+            float p1 = step( length( p - vec2(0.125, 0.45) ), 0.025 );
+
+            float p2_0 = step( length(p - vec2(0.08, 0.14) ), 0.0125 );
+            float p2_1 = step( length(p - vec2(0.16, 0.125) ), 0.0125);
+            float p2_2 = step( length(p - vec2(0.1, 0.07) ), 0.0125 );
+            float p2 = max(p2_0, max(p2_1, p2_2));
+
+            return vec4( max(p0, max(p1, p2) ) );
+        }
+
+        vec3 sampletex( vec2 uv ) 
+        {
+            //return srgb2lin( texture2D(uSampler, uv, -10.0).rgb );
+            return texture2D(uSampler, uv).rgb;
+        }
+
+        float sampleGaussian(int samplepoint) {
+            int smplGaussian = samplepoint / (NUM_SAMPLES);
+            float weight = (1.0 / sqrt(2.0*M_PI)) * exp(-1.0*pow(float(smplGaussian), 2.0) / 2.0);
+            return weight;
+        }
+
+        void interchangesort(inout MedianStruct arraySamples[NUM_SAMPLES]) {
+            const int lengthOfArray = NUM_SAMPLES;
+            // we use an anidated loop
+            for (int i = 0; i < lengthOfArray; i++) {
+                for (int j = 0; j < lengthOfArray; j++) {
+                    if (arraySamples[i].greyval > arraySamples[j].greyval) {
+                        // Interchange of values
+                        MedianStruct auxvar = arraySamples[i];
+                        arraySamples[i] = arraySamples[j];
+                        arraySamples[j] = auxvar;
+                    }
+                }
+            }
+        }
+
+        vec3 medianFilter(MedianStruct arraySamples[NUM_SAMPLES]) {
+             interchangesort(arraySamples);
+             const int i = 15;
+             const int medianPositionFilter = int(NUM_SAMPLES / 2);
+             return (arraySamples[medianPositionFilter].color_rgb);
+             //return(vec3(1.0, 0.0, 0.0));
+        }
+
+
+        void main(void) {
+            vec2 blurvec = normalize(blurdir) / iResolution.xy;
+            vec2 uv = gl_FragCoord.xy / iResolution.xy;
+
+
+            float paramBokehQuantity = 0.0;
+            if (uEnableDepthBokeh == 0) 
+            {
+                //paramBokehQuantity = (0.55 + 0.45 * sin(5.0 * uv.x + iTime ) );    
+                paramBokehQuantity = 1.0;
+            } else {
+                paramBokehQuantity = texture2D(uSamplerFocalDepth, vTextureCoord).x;  
+            }
+            
+            float ammountBlur = bokehStrength * paramBokehQuantity;
+            
+
+            //ammountBlur = bokehStrength;
+            float blurdist = blurdist_px * ammountBlur;
+
+            vec2 p0 = uv;
+            vec2 p1 = uv + blurdist * blurvec;
+            vec2 stepvec = (p1-p0) / float(NUM_SAMPLES);
+            vec2 p = p0;
+
+            #if defined(USE_RANDOM)
+            p +=  (hash12n(uv + fract(iTime)+0.1)) * stepvec;
+            #endif
+
+            vec3 sumcol = vec3(0.0);
+            float firstSampleWeight = 0.5;
+            float restOfSamplesWeights = (1.0 - firstSampleWeight)/float(NUM_SAMPLES);
+
+            //firstSampleWeight = 1.0 / (float(NUM_SAMPLES)*1.0);
+            //restOfSamplesWeights = firstSampleWeight;
+            vec3 color_init = vec3(0.0, 1.0, 0.0);
+            float acum = 0.0;
+            MedianStruct arraySamples[NUM_SAMPLES];
+
+            for (int i=0; i < NUM_SAMPLES; ++i)
+            {
+                
+                vec3 smpl = sampletex(p);
+                //color_init = vec3(0.0, 1.0, 0.0);
+                //sumcol += smpl;
+                //if (i == 0) {
+                //    color_init = smpl;
+                //    sumcol += firstSampleWeight*smpl;
+                //}
+                //if (i > 0) {
+                //    sumcol += restOfSamplesWeights*smpl;
+                //}
+
+                //if(i == 8) {
+                //    color_init = smpl;
+                //}
+                float weightSmpl = sampleGaussian(i);
+                //float weightSmpl = 1.0;
+                sumcol += weightSmpl * smpl;
+                acum += weightSmpl;
+
+                arraySamples[i].greyval = (smpl.x + smpl.y + smpl.z)/3.0;
+                arraySamples[i].color_rgb = vec3(smpl.x, smpl.y, smpl.z);
+
+                p += stepvec;
+            }
+            sumcol = medianFilter(arraySamples);
+            //sumcol /= float(NUM_SAMPLES);
+            //sumcol /= acum;
+
+            //gl_FragColor = vec4( lin2srgb(sumcol * MULT), 1.0);
+            //gl_FragColor = vec4(color_init, 1.0); return;
+            gl_FragColor = vec4( sumcol, 1.0);
+        }
+    </script>
+
+    <script id="shader-fs-bokeh-BufferB" type="x-shader/x-fragment">
+        precision mediump float;
+
+        // screen filling texture
+        uniform sampler2D uSampler;
+        uniform sampler2D uSamplerFocalDepth;
+
+        uniform float bokehStrength;
+
+        varying vec2 vTextureCoord;
+
+        #define M_PI 3.1415926535897932384626433832795
+        #define USE_RANDOM
+
+        const vec2 blurdir = vec2( 1.0, -0.577350269189626 );
+
+        // ===
+
+        const float blurdist_px = 64.0;
+        const int NUM_SAMPLES = 16;
+
+        const float MULT = 2.0;
+
+        uniform vec3 iResolution; // The viewport resolution (z is pixel aspect ratio, usually 1.0)
+        uniform float iTime;    // Current time in seconds
+
+        uniform int uEnableDepthBokeh;
+
+        struct MedianStruct 
+        {
+            float greyval;
+            vec3 color_rgb;
+        };
+
+        //#define GAMMA_SRGB
+        #if defined( GAMMA_SRGB )
+        vec3 srgb2lin( vec3 cs )
+        {
+            vec3 c_lo = cs / 12.92;
+            vec3 c_hi = pow( (cs + 0.055) / 1.055, vec3(2.4) );
+            vec3 s = step(vec3(0.04045), cs);
+            return mix( c_lo, c_hi, s );
+        }
+        vec3 lin2srgb( vec3 cl )
+        {
+            //cl = clamp(cl, 0.0, 1.0);
+            vec3 c_lo = 12.92 * cl;
+            vec3 c_hi = 1.055 * pow(cl, vec3(0.41666)) - 0.055;
+            vec3 s = step( vec3(0.0031308), cl);
+            return mix( c_lo, c_hi, s);
+        }
+        #else
+        vec3 srgb2lin(vec3 c) { return c*c; }
+        vec3 lin2srgb(vec3 c) { return sqrt(c); }
+        #endif //GAMMA_SRGB
+
+        //note uniform pdf rand [0;1[
+        float hash12n(vec2 p)
+        {
+            p = fract(p * vec2(5.3987, 5.4421));
+            p += dot(p.yx, p.xy + vec2(21.5351, 14.3137));
+            return fract(p.x * p.y * 95.4307);
+        }
+
+        vec4 pattern( vec2 p )
+        {
+            float aspect = iResolution.x/iResolution.y;
+            float p0 = step(abs(p.x - 0.125), 0.01) * step(abs(p.y - 0.27), 0.01);
+            float p1 = step( length( p - vec2(0.125, 0.45) ), 0.025 );
+
+            float p2_0 = step( length( p - vec2(0.08, 0.14) ), 0.0125);
+            float p2_1 = step( length( p-vec2(0.16, 0.125) ), 0.0125);
+            float p2_2 = step( length( p-vec2(0.1, 0.07) ), 0.0125);
+            float p2 = max(p2_0, max(p2_1, p2_2));
+
+            return vec4( max( p0, max(p1, p2) ) );
+        }
+
+        vec3 sampletex( vec2 uv )
+        {
+            return texture2D(uSampler, uv).rgb;
+        }
+
+        float sampleGaussian(int samplepoint) {
+            int smplGaussian = samplepoint / (NUM_SAMPLES);
+            float weight = (1.0 / sqrt(2.0*M_PI)) * exp(-1.0*pow(float(smplGaussian), 2.0) / 2.0);
+            return weight;
+        }
+
+        void interchangesort(inout MedianStruct arraySamples[NUM_SAMPLES]) {
+            const int lengthOfArray = NUM_SAMPLES;
+            // we use an anidated loop
+            for (int i = 0; i < lengthOfArray; i++) {
+                for (int j = 0; j < lengthOfArray; j++) {
+                    if (arraySamples[i].greyval > arraySamples[j].greyval) {
+                        // Interchange of values
+                        MedianStruct auxvar = arraySamples[i];
+                        arraySamples[i] = arraySamples[j];
+                        arraySamples[j] = auxvar;
+                    }
+                }
+            }
+        }
+
+        vec3 medianFilter(MedianStruct arraySamples[NUM_SAMPLES]) {
+             interchangesort(arraySamples);
+             const int i = 15;
+             const int medianPositionFilter = int(NUM_SAMPLES / 2);
+             return (arraySamples[medianPositionFilter].color_rgb);
+        }
+
+
+        void main(void) {
+            vec2 blurvec = normalize(blurdir) / iResolution.xy;
+            vec2 uv = gl_FragCoord.xy / iResolution.xy;
+
+            float paramBokehQuantity = 0.0;
+            if (uEnableDepthBokeh == 0) 
+            {
+                //paramBokehQuantity = ( 0.55 + 0.45 * sin( 5.0 * uv.x + iTime ) );
+                paramBokehQuantity = 1.0;
+            } else {
+                paramBokehQuantity = texture2D(uSamplerFocalDepth, vTextureCoord).x;
+            }
+
+            float ammountBlur = bokehStrength * paramBokehQuantity;
+            
+            float blurdist = blurdist_px * ammountBlur;
+
+            vec2 p0 = uv;
+            vec2 p1 = uv + blurdist * blurvec;
+            vec2 stepvec = (p1-p0) / float(NUM_SAMPLES);
+            vec2 p = p0;
+
+            #if defined(USE_RANDOM)
+            p += (hash12n(uv+fract(iTime)+0.1)) * stepvec;
+            #endif
+
+            vec3 sumcol = vec3(0.0);
+            float firstSampleWeight = 0.3;
+            float restOfSampleWeights = (1.0 - firstSampleWeight)/float(NUM_SAMPLES);
+
+            firstSampleWeight = 1.0 / (float(NUM_SAMPLES)*0.4);
+            restOfSampleWeights = firstSampleWeight;
+            float acum = 0.0;
+            MedianStruct arraySamples[NUM_SAMPLES];
+
+            for (int i=0; i<NUM_SAMPLES;++i)
+            {
+                
+                vec3 smpl = sampletex(p);
+                float weightSmpl = sampleGaussian(i);
+                sumcol += weightSmpl*smpl;
+                acum += weightSmpl;
+
+                arraySamples[i].greyval = (smpl.x + smpl.y + smpl.z)/3.0;
+                arraySamples[i].color_rgb = vec3(smpl.x, smpl.y, smpl.z);
+
+                p += stepvec;
+            }
+            sumcol = medianFilter(arraySamples);
+            //sumcol /= float(NUM_SAMPLES);
+            //sumcol /= acum;
+
+            gl_FragColor = vec4( sumcol, 1.0 );
+        }
+    </script>
+
+    <script id="shader-fs-bokeh-BufferC" type="x-shader/x-fragment">
+        precision mediump float;
+
+        uniform sampler2D iChannel0;
+        uniform sampler2D uSamplerFocalDepth;
+
+        uniform float bokehStrength;
+
+        varying vec2 vTextureCoord;
+
+        #define M_PI 3.1415926535897932384626433832795
+        #define USE_RANDOM
+
+        const vec2 blurdir = vec2( -1.0, -0.577350269189626 );
+
+        // ===
+        const float blurdist_px = 64.0;
+        const int NUM_SAMPLES = 16;
+
+        uniform vec3 iResolution;
+        uniform float iTime;
+
+        uniform int uEnableDepthBokeh;
+
+        struct MedianStruct 
+        {
+            float greyval;
+            vec3 color_rgb;
+        };
+
+        //#define GAMMA_SRGB
+        #if defined ( GAMMA_SRGB )
+
+        vec3 srgb2lin( vec3 cs )
+        {
+            vec3 c_lo = cs / 12.92;
+            vec3 c_hi = pow( (cs + 0.055) / 1.055, vec3(2.4) );
+            vec3 s = step(vec3(0.04045), cs);
+            return mix( c_lo, c_hi, s);
+        }
+
+        vec3 lin2srgb( vec3 cl )
+        {
+            //cl = clamp( cl, 0.0, 1.0 );
+            vec3 c_lo = 12.92 * cl;
+            vec3 c_hi = 1.055 * pow(cl, vec3(0.41666)) - 0.055;
+            vec3 s = step(vec3(0.0031308), cl);
+            return mix( c_lo, c_hi, s);
+        }
+        #else
+        vec3 srgb2lin(vec3 c) { return c*c; }
+        vec3 lin2srgb(vec3 c) { return sqrt(c); }
+        #endif //GAMMA_SRGB
+
+        //note: uniform pdf rand [0;1[
+        float hash12n(vec2 p)
+        {
+            p = fract(p * vec2(5.3987, 5.4421));
+            p += dot(p.yx, p.xy + vec2(21.5351, 14.3137));
+            return fract(p.x * p.y * 95.4307);
+        }
+
+        float sampleGaussian(int samplepoint) {
+            int smplGaussian = samplepoint / (NUM_SAMPLES);
+            float weight = (1.0 / sqrt(2.0*M_PI)) * exp(-1.0*pow(float(smplGaussian), 2.0) / 2.0);
+            return weight;
+        }
+
+        void interchangesort(inout MedianStruct arraySamples[NUM_SAMPLES]) {
+            const int lengthOfArray = NUM_SAMPLES;
+            // we use an anidated loop
+            for (int i = 0; i < lengthOfArray; i++) {
+                for (int j = 0; j < lengthOfArray; j++) {
+                    if (arraySamples[i].greyval > arraySamples[j].greyval) {
+                        // Interchange of values
+                        MedianStruct auxvar = arraySamples[i];
+                        arraySamples[i] = arraySamples[j];
+                        arraySamples[j] = auxvar;
+                    }
+                }
+            }
+        }
+
+        vec3 medianFilter(MedianStruct arraySamples[NUM_SAMPLES]) {
+             interchangesort(arraySamples);
+             const int i = 15;
+             const int medianPositionFilter = int(NUM_SAMPLES / 2);
+             return (arraySamples[medianPositionFilter].color_rgb);
+             //return(vec3(1.0, 0.0, 0.0));
+        }
+
+        void main()
+        {
+            vec2 blurvec = normalize(blurdir) / iResolution.xy;
+            vec2 uv = gl_FragCoord.xy / iResolution.xy;            
+
+            float paramBokehQuantity = 0.0;
+            if (uEnableDepthBokeh == 0) 
+            {
+                //paramBokehQuantity = (0.55 + 0.45 * sin( 5.0 * uv.x + iTime ) );
+                paramBokehQuantity = 1.0;
+            } else {
+                paramBokehQuantity = texture2D(uSamplerFocalDepth, vTextureCoord).x;
+            }
+
+            float ammountBlur = bokehStrength * paramBokehQuantity;
+            
+            float blurdist = blurdist_px * ammountBlur;
+
+            vec2 p0 = uv;
+            vec2 p1 = uv + blurdist * blurvec;
+            vec2 stepvec = (p1-p0) / float(NUM_SAMPLES);
+            vec2 p = p0;
+            #if defined(USE_RANDOM)
+            p += (hash12n(uv+fract(iTime)+0.3)) * stepvec;
+            #endif
+
+            vec3 sumcol = vec3(0.0);
+
+            float firstSampleWeight = 1.0 / (float(NUM_SAMPLES)*0.4);
+            float restOfSampleWeights = firstSampleWeight;
+
+            float acum = 0.0;
+            MedianStruct arraySamples[NUM_SAMPLES];
+
+            for (int i =0; i<NUM_SAMPLES;++i)
+            {
+                float weightSmpl = sampleGaussian(i);
+                vec3 smpl = texture2D(iChannel0, p).rgb;
+                sumcol += weightSmpl * texture2D(iChannel0, p).rgb;
+                acum += weightSmpl;
+
+                arraySamples[i].greyval = (smpl.x + smpl.y + smpl.z)/3.0;
+                arraySamples[i].color_rgb = vec3(smpl.x, smpl.y, smpl.z);
+
+                p += stepvec;
+            }
+            sumcol = medianFilter(arraySamples);
+            //sumcol /= float(NUM_SAMPLES);
+            //sumcol /= acum;
+
+            gl_FragColor = vec4(sumcol, 1.0);
+
+        }
+
+    </script>
+
+    <script id="shader-fs-bokeh-BufferD" type="x-shader/x-fragment">
+        precision mediump float;
+
+        uniform sampler2D iChannel0;
+        uniform sampler2D uSamplerFocalDepth;
+
+        uniform float bokehStrength;
+
+        uniform int uEnableDepthBokeh;
+
+        varying vec2 vTextureCoord;
+
+        #define M_PI 3.1415926535897932384626433832795
+        #define USE_RANDOM
+
+        const vec2 blurdir = vec2(1.0, -0.577350269189626 );
+        // ====
+
+        const float blurdist_px = 64.0;
+        const int NUM_SAMPLES = 16;
+
+        uniform vec3 iResolution;
+        uniform float iTime;
+
+        struct MedianStruct 
+        {
+            float greyval;
+            vec3 color_rgb;
+        };
+
+        //#define GAMMA_SRGB
+        #if defined (GAMMA_SRGB)
+        vec3 srgb2lin( vec3 cs )
+        {
+            vec3 c_lo = cs / 12.92;
+            vec3 c_hi = pow( (cs + 0.055) / 1.055, vec3(2.4));
+            vec3 s = step(vec3(0.04045), cs);
+            return mix( c_lo, c_hi, s);
+        }
+        vec3 lin2srgb( vec3 cl )
+        {
+            //cl = clamp( cl, 0.0, 1.0);
+            vec3 c_lo = 12.92 * cl;
+            vec3 c_hi = 1.055 * pow(cl, vec3(0.41666)) - 0.055;
+            vec3 s = step( vec3(0.0031308), cl);
+            return mix( c_lo, c_hi, s);
+        }
+        #else 
+        vec3 srgb2lin(vec3 c) { return c*c; }
+        vec3 lin2srgb(vec3 c) { return sqrt(c); }
+        #endif //GAMMA_RGB
+
+        //note:uniform pdf rand [0:1[
+        float hash12n(vec2 p)
+        {
+            p = fract(p * vec2(5.3987, 5.4421));
+            p += dot(p.yx, p.xy + vec2(21.5351, 14.3137));
+            return fract(p.x * p.y * 95.4307);
+        }
+
+        float sampleGaussian(int samplepoint) {
+            int smplGaussian = samplepoint / (NUM_SAMPLES);
+            float weight = (1.0 / sqrt(2.0*M_PI)) * exp(-1.0*pow(float(smplGaussian), 2.0) / 2.0);
+            return weight;
+        }
+
+        void interchangesort(inout MedianStruct arraySamples[NUM_SAMPLES]) {
+            const int lengthOfArray = NUM_SAMPLES;
+            // we use an anidated loop
+            for (int i = 0; i < lengthOfArray; i++) {
+                for (int j = 0; j < lengthOfArray; j++) {
+                    if (arraySamples[i].greyval > arraySamples[j].greyval) {
+                        // Interchange of values
+                        MedianStruct auxvar = arraySamples[i];
+                        arraySamples[i] = arraySamples[j];
+                        arraySamples[j] = auxvar;
+                    }
+                }
+            }
+        }
+
+        vec3 medianFilter(MedianStruct arraySamples[NUM_SAMPLES]) {
+             interchangesort(arraySamples);
+             const int i = 15;
+             const int medianPositionFilter = int(NUM_SAMPLES / 2);
+             return (arraySamples[medianPositionFilter].color_rgb);
+        }
+
+        void main()
+        {
+
+            vec2 blurvec = normalize(blurdir) / iResolution.xy;
+            vec2 uv = gl_FragCoord.xy / iResolution.xy;
+            
+            float paramBokehQuantity = 0.0;
+            if (uEnableDepthBokeh == 0)
+            {
+                //paramBokehQuantity = ( 0.55 + 0.45 * sin( 5.0 * uv.x + iTime ) );
+                paramBokehQuantity = 1.0;
+            } else {
+                paramBokehQuantity = texture2D(uSamplerFocalDepth, vTextureCoord).x;
+            }
+
+            float ammountBlur = bokehStrength * paramBokehQuantity;
+
+            float blurdist = blurdist_px * ammountBlur;
+
+            vec2 p0 = uv;
+            vec2 p1 = uv + blurdist * blurvec;
+            vec2 stepvec = (p1-p0) / float(NUM_SAMPLES);
+            vec2 p = p0;
+            #if defined (USE_RANDOM)
+            p += (hash12n(uv+fract(iTime)+0.4)) * stepvec;
+            #endif
+
+            vec3 sumcol = vec3(0.0);
+            float firstSampleWeight = 1.0 / (float(NUM_SAMPLES)*0.4);
+            float restOfSampleWeights = firstSampleWeight;
+
+            float acum = 0.0;
+            MedianStruct arraySamples[NUM_SAMPLES];
+
+            for (int i=0; i<NUM_SAMPLES;++i)
+            {
+                float weightSmpl = sampleGaussian(i);
+                sumcol += weightSmpl * texture2D(iChannel0, p).rgb;
+                vec3 smpl = texture2D(iChannel0, p).rgb;
+                acum += weightSmpl;
+
+                arraySamples[i].greyval = (smpl.x + smpl.y + smpl.z)/3.0;
+                arraySamples[i].color_rgb = vec3(smpl.x, smpl.y, smpl.z);
+
+                p += stepvec;
+            }
+            sumcol = medianFilter(arraySamples);
+            //sumcol /= float(NUM_SAMPLES);
+            //sumcol /= acum;
+
+            gl_FragColor = vec4( sumcol, 1.0);
+        }
+    </script>
+
+
+	<script id="shader-fs-bokeh-Image" type="x-shader/x-fragment">
+        precision mediump float;
+
+        //screen filling texture
+        uniform sampler2D iChannel0;
+        uniform sampler2D iChannel1;
+        uniform sampler2D iChannel2;
+        uniform sampler2D iChannel3;
+
+        uniform sampler2D uSamplerFocalDepth;
+
+        uniform float bokehStrength;
+
+        uniform int uEnableDepthBokeh;
+
+        varying vec2 vTextureCoord;
+
+        uniform vec3 iResolution; // The viewport resolution (z is pixel aspect ratio, usually 1.0)
+        uniform float iTime; // Current time in seconds
+
+        #define M_PI 3.1415926535897932384626433832795
+        #define USE_RANDOM
+
+        struct MedianStruct 
+        {
+            float greyval;
+            vec3 color_rgb;
+        };
+
+        const vec2 blurdir = vec2( -1.0, -0.577350269189626);
+        // ===
+        const float blurdist_px = 64.0;
+        const int NUM_SAMPLES = 16;
+
+        //#define GAMMA_SRGB
+        #if defined (GAMMA_SRGB )
+
+        vec3 srgb2lin( vec cs )
+        {
+            vec3 c_lo = cs  12.92;
+            vec3 c_hi = pow( (cs + 0.055) / 1.055, vec3(2.4) );
+            vec3 s = step(vec3(0.04045), cs);
+            return mix( c_lo, c_hi, s );
+        }
+
+        vec3 lin2srgb( vec3 cl )
+        {
+            // cl = clamp(cl, 0.0, 1.0);
+            vec3 c_lo = 12.92 * cl;
+            vec3 c_hi = 1.055 * pow(cl, vec3(0.4166)) - 0.055;
+            vec3 s = step( vec3(0.0031308), cl);
+            return mix( c_lo, c_hi, s );
+        }
+        #else
+        vec3 srgb2lin(vec3 c) { return c*c; }
+        vec3 lin2srgb(vec3 c) { return sqrt(c); }
+        #endif //GAMMA_SRGB
+
+        //note:: uniform pdf rand [0:1[
+        float hash12n(vec2 p)
+        {
+            p = fract(p * vec2(5.3987, 5.4421));
+            p += dot(p.yx, p.xy + vec2(21.5351, 14.3137));
+            return fract(p.x * p.y * 95.4307);
+        }
+
+        float sampleGaussian(int samplepoint) {
+            int smplGaussian = samplepoint / (NUM_SAMPLES);
+            float weight = (1.0 / sqrt(2.0*M_PI)) * exp(-1.0*pow(float(smplGaussian), 2.0) / 2.0);
+            return weight;
+        }
+
+        void interchangesort(inout MedianStruct arraySamples[NUM_SAMPLES]) {
+            const int lengthOfArray = NUM_SAMPLES;
+            // we use an anidated loop
+            for (int i = 0; i < lengthOfArray; i++) {
+                for (int j = 0; j < lengthOfArray; j++) {
+                    if (arraySamples[i].greyval > arraySamples[j].greyval) {
+                        // Interchange of values
+                        MedianStruct auxvar = arraySamples[i];
+                        arraySamples[i] = arraySamples[j];
+                        arraySamples[j] = auxvar;
+                    }
+                }
+            }
+        }
+
+        vec3 medianFilter(MedianStruct arraySamples[NUM_SAMPLES]) {
+             interchangesort(arraySamples);
+             const int i = 15;
+             const int medianPositionFilter = int(NUM_SAMPLES / 2);
+             return (arraySamples[medianPositionFilter].color_rgb);
+             //return(vec3(1.0, 0.0, 0.0));
+        }
+
+        void main(void) {
+            vec2 blurvec = normalize(blurdir) / iResolution.xy;
+
+            vec2 uv = gl_FragCoord.xy / iResolution.xy;
+            
+            float paramBokehQuantity = 0.0;
+            if (uEnableDepthBokeh == 0) 
+            {
+                //paramBokehQuantity = ( 0.55 + 0.45 * sin( 5.0 * uv.x + iTime ) );
+                paramBokehQuantity = 1.0;
+            } else {
+                paramBokehQuantity = texture2D(uSamplerFocalDepth, vTextureCoord).x;
+            }
+            float ammountBlur = bokehStrength * paramBokehQuantity;
+
+            float blurdist = blurdist_px * ammountBlur;
+
+            vec2 p0 = uv;
+            vec2 p1 = uv + blurdist * blurvec;
+            vec2 stepvec = (p1 - p0) / float(NUM_SAMPLES);
+            vec2 p = p0;
+            #if defined(USE_RANDOM)
+            p += (hash12n(uv+fract(iTime)+0.5)) * stepvec;
+            #endif
+
+            vec3 sumcol = vec3(0.0);
+
+            float firstSampleWeight = 1.0 / (float(NUM_SAMPLES)*0.4);
+            float restOfSampleWeights = firstSampleWeight;
+
+            float acum = 0.0;
+            MedianStruct arraySamples[NUM_SAMPLES];
+
+            for (int i=0; i<NUM_SAMPLES;++i)
+            {
+                float weightSmpl = sampleGaussian(i);
+                sumcol += weightSmpl * texture2D( iChannel1, p).rgb;
+                vec3 smpl = texture2D(iChannel1, p).rgb;
+                acum += weightSmpl;
+
+                arraySamples[i].greyval = (smpl.x + smpl.y + smpl.z)/3.0;
+                arraySamples[i].color_rgb = vec3(smpl.x, smpl.y, smpl.z);
+
+
+                p += stepvec;
+            }
+            sumcol = medianFilter(arraySamples);
+            //sumcol /= float(NUM_SAMPLES);
+            //sumcol /= acum;
+
+            vec3 s2 = texture2D(iChannel2, uv).rgb;
+            vec3 s3 = texture2D( iChannel3, uv).rgb;
+
+            // DEBUG
+            //gl_FragColor = texture2D( iChannel0, uv); return; // DBG BufferA
+            //gl_FragColor = texture2D( iChannel1, uv); return; // DBG BufferB
+            //gl_FragColor = texture2D( iChannel2, uv); return; // DBG BufferC
+            //gl_FragColor = texture2D( iChannel3, uv); return; // DBG BufferD
+
+
+            //gl_FragColor = texture2D( iChannel1, uv); return; // DBG
+            //gl_FragColor = texture2D( iChannel2, uv); return; // DBG
+            //gl_FragColor = texture2D( iChannel3, uv); return; // DBG
+
+            //gl_FragColor = vec4(sumcol,1.0); return; //DBG
+            //gl_FragColor = texture2D( iChannel2, uv); return; // DBG
+            //gl_FragColor = vec4(lin2srgb(s2), 1.0); return; //DBG
+            //gl_FragColor = vec4(lin2srgb(s3), 1.0); return; //DBG
+
+            vec3 outcol = sumcol + s2 + s3;
+            gl_FragColor = vec4(outcol*0.3333, 1.0);
+
+            //gl_FragColor = vec4(0.0, 1.0, 1.0, 1.0);
+        }
+	</script>
+
+	<script id="shader-vs-postprocess" type="x-shader/x-vertex">
+		attribute vec3 aVertexPosition;
+		attribute vec2 aTextureCoord;
+
+		varying vec2 vTextureCoord;
+
+		void main(void) {
+			vTextureCoord = aTextureCoord;
+			gl_Position = vec4(aVertexPosition, 1.0);
+		}
+
+	</script>
+
+    <script id="rend-to-texture-fs" type="x-shader/x-fragment">
+        precision mediump float;
+
+        varying vec2 vTextureCoord;
+
+        uniform sampler2D uSampler;
+
+        uniform int uDrawBorder;
+
+        void main(void) {
+            if (uDrawBorder == 0) {
+                gl_FragColor = texture2D(uSampler, vTextureCoord);
+            } else {
+                gl_FragColor = vec4(0.46, 0.71, 0.0, 1.0);
+            }
+            
+        }
+
+    </script>
+
+    <script id="rend-to-texture-vs" type="x-shader/x-vertex">
+        attribute vec3 aVertexPosition;
+        attribute vec2 aTextureCoord;
+
+        varying vec2 vTextureCoord;
+
+        uniform mat4 model;
+
+        void main(void) {
+            vTextureCoord = aTextureCoord;
+            gl_Position = model * vec4(aVertexPosition, 1.0);
+        }
+    </script>
+
+	<script type="text/javascript">
+
+		var gl;
+
+		// Camera
+		var myCamera;
+		var lastX;
+		var lastY;
+		var firstMouse = true;
+		var enableMouse = false;
+
+		// Deltatime
+		var deltaTime = 0.0;	// Time between current frame and last frame
+		var lastFrame = 0.0;	// Time of last frame
+
+		var distanceFocalPlane = 1000.0;
+
+		var uFocalDistance = 300;
+
+		var textureFramebufferSetupScene;
+		var textureFramebufferFocalDepthScene;
+		var textureFramebufferBufferABokeh;
+		var textureFramebufferBufferBBokeh;
+		var textureFramebufferBufferCBokeh;
+		var textureFramebufferBufferDBokeh;
+
+		var framebufferSetupScene;
+		var framebufferFocalDepthScene;
+		var framebufferBufferABokeh;
+		var framebufferBufferBBokeh;
+		var framebufferBufferCBokeh;
+		var framebufferBufferDBokeh;
+
+
+		var screenFillingVertexPositionBuffer;
+		var screenFillingTextureCoordBuffer;
+		var screenFillingIndexBuffer;
+
+		var elapsed;
+        var time_start;
+
+        var bokehStrength = 0.9;
+
+
+        var lightPos = vec3.fromValues(10.0, 0.0, 0.0);
+
+        var lightPointPos = vec3.fromValues(10.0, 10.0, 15.0);
+
+		function initGL(canvas) {
+			try {
+				gl = canvas.getContext("experimental-webgl");
+				gl.viewportWidth = canvas.width;
+				gl.viewportHeight = canvas.height;
+			} catch (e) {
+			}
+			if (!gl) {
+				alert("Could not initialise WebGL, sorry :-(");
+			}
+		}
+
+		function getShader(gl, id) {
+			var shaderScript = document.getElementById(id);
+			if (!shaderScript) {
+				return null;
+			}
+
+			var str = "";
+			var k = shaderScript.firstChild;
+			while (k) {
+				if (k.nodeType == 3) {
+					str += k.textContent;
+				}
+				k = k.nextSibling;
+			}
+
+			var shader;
+			if (shaderScript.type == "x-shader/x-fragment") {
+				shader = gl.createShader(gl.FRAGMENT_SHADER);
+			} else if (shaderScript.type = "x-shader/x-vertex") {
+				shader = gl.createShader(gl.VERTEX_SHADER);
+			} else {
+				return null;
+			}
+
+			gl.shaderSource(shader, str);
+			gl.compileShader(shader);
+
+			if (!gl.getShaderParameter(shader, gl.COMPILE_STATUS)) {
+				alert(gl.getShaderInfoLog(shader));
+				return null;
+			}
+
+			return shader;
+		}
+
+		var shaderProgram;
+
+		function initShaders() {
+			var fragmentShader = getShader(gl, "per-fragment-lighting-fs");
+			var vertexShader = getShader(gl, "per-fragment-lighting-vs");
+
+			shaderProgram = gl.createProgram();
+			gl.attachShader(shaderProgram, vertexShader);
+			gl.attachShader(shaderProgram, fragmentShader);
+			gl.linkProgram(shaderProgram);
+
+			if(!gl.getProgramParameter(shaderProgram, gl.LINK_STATUS)) {
+				alert("Could not initialise shaders");
+			}
+
+			//gl.useProgram(shaderProgram);
+
+			shaderProgram.vertexPositionAttribute = gl.getAttribLocation(shaderProgram, "aVertexPosition");
+			gl.enableVertexAttribArray(shaderProgram.vertexPositionAttribute);
+
+			shaderProgram.vertexNormalAttribute = gl.getAttribLocation(shaderProgram, "aVertexNormal");
+			gl.enableVertexAttribArray(shaderProgram.vertexNormalAttribute);
+
+			shaderProgram.textureCoordAttribute = gl.getAttribLocation(shaderProgram, "aTextureCoord");
+			gl.enableVertexAttribArray(shaderProgram.textureCoordAttribute);
+
+			shaderProgram.pMatrixUniform = gl.getUniformLocation(shaderProgram, "uPMatrix");
+			shaderProgram.modelMatrixUniform = gl.getUniformLocation(shaderProgram, "uMMatrix");
+			shaderProgram.viewMatrixUniform = gl.getUniformLocation(shaderProgram, "uVMatrix");
+			shaderProgram.nMatrixUniform = gl.getUniformLocation(shaderProgram, "uNMatrix");
+			shaderProgram.samplerUniform = gl.getUniformLocation(shaderProgram, "uSampler");
+			shaderProgram.materialShininessUniform = gl.getUniformLocation(shaderProgram, "uMaterialShininess");
+			shaderProgram.showSpecularHighlightsUniform = gl.getUniformLocation(shaderProgram, "uShowSpecularHighlights");
+			shaderProgram.useTexturesUniform = gl.getUniformLocation(shaderProgram, "uUseTextures");
+			shaderProgram.useLightingUniform = gl.getUniformLocation(shaderProgram, "uUseLighting");
+			shaderProgram.ambientColorUniform = gl.getUniformLocation(shaderProgram, "uAmbientColor");
+
+			shaderProgram.pointLightingLocationUniform = gl.getUniformLocation(shaderProgram, "uPointLightingLocation");
+			shaderProgram.pointLightingSpecularColorUniform = gl.getUniformLocation(shaderProgram, "uPointLightingSpecularColor");
+			shaderProgram.pointLightingDiffuseColorUniform = gl.getUniformLocation(shaderProgram, "uPointLightingDiffuseColor");
+		}
+
+		var shaderProgramFocalPlane;
+
+		function initShadersFocalPlane() {
+			var fragmentShader = getShader(gl, "fragment-focal-plane-fs");
+			var vertexShader = getShader(gl, "fragment-focal-plane-vs");
+
+			shaderProgramFocalPlane = gl.createProgram();
+			gl.attachShader(shaderProgramFocalPlane, vertexShader);
+			gl.attachShader(shaderProgramFocalPlane, fragmentShader);
+			gl.linkProgram(shaderProgramFocalPlane);
+
+			if (!gl.getProgramParameter(shaderProgramFocalPlane, gl.LINK_STATUS)) {
+				alert("Could not initialise shaders");
+			}
+		}
+
+		var shaderProgramDepth;
+
+		function initShadersDepth() {
+			var fragmentShader = getShader(gl, "fragment-depth-fs");
+			var vertexShader = getShader(gl, "fragment-depth-vs");
+
+			shaderProgramDepth = gl.createProgram();
+			gl.attachShader(shaderProgramDepth, vertexShader);
+			gl.attachShader(shaderProgramDepth, fragmentShader);
+			gl.linkProgram(shaderProgramDepth);
+
+			if (!gl.getProgramParameter(shaderProgramDepth, gl.LINK_STATUS)) {
+				alert("Could not initialise shaders");
+			}
+
+			shaderProgramDepth.vertexPositionAttribute = gl.getAttribLocation(shaderProgramDepth, "aVertexPosition");
+			gl.enableVertexAttribArray(shaderProgramDepth.vertexPositionAttribute);
+
+			shaderProgramDepth.pMatrixUniform = gl.getUniformLocation(shaderProgramDepth, "uPMatrix");
+			shaderProgramDepth.modelMatrixUniform = gl.getUniformLocation(shaderProgramDepth, "uMMatrix");
+			shaderProgramDepth.viewMatrixUniform = gl.getUniformLocation(shaderProgramDepth, "uVMatrix");
+
+			shaderProgramDepth.nearUniform = gl.getUniformLocation(shaderProgramDepth, "uNear");
+			shaderProgramDepth.farUniform = gl.getUniformLocation(shaderProgramDepth, "uFar");
+		}
+
+		var shaderProgramFocalDepth;
+
+		function initShadersFocalDepth() {
+			var fragmentShader = getShader(gl, "focal-depth-fs");
+			var vertexShader = getShader(gl, "focal-depth-vs");
+
+			shaderProgramFocalDepth = gl.createProgram();
+			gl.attachShader(shaderProgramFocalDepth, vertexShader);
+			gl.attachShader(shaderProgramFocalDepth, fragmentShader);
+			gl.linkProgram(shaderProgramFocalDepth);
+
+			if (!gl.getProgramParameter(shaderProgramFocalDepth, gl.LINK_STATUS)) {
+				alert("Could not initialise shaders");
+			}
+
+			shaderProgramFocalDepth.vertexPositionAttribute = gl.getAttribLocation(shaderProgramFocalDepth, "aVertexPosition");
+			gl.enableVertexAttribArray(shaderProgramFocalDepth.vertexPositionAttribute);
+
+			shaderProgramFocalDepth.pMatrixUniform = gl.getUniformLocation(shaderProgramFocalDepth, "uPMatrix");
+			shaderProgramFocalDepth.modelMatrixUniform = gl.getUniformLocation(shaderProgramFocalDepth, "uMMatrix");
+			shaderProgramFocalDepth.viewMatrixUniform = gl.getUniformLocation(shaderProgramFocalDepth, "uVMatrix");
+
+			shaderProgramFocalDepth.farUniform = gl.getUniformLocation(shaderProgramFocalDepth, "uFar");
+
+			shaderProgramFocalDepth.cameraFrontsUniform = gl.getUniformLocation(shaderProgramFocalDepth, "uCameraFront");
+
+			//uCameraPos
+			shaderProgramFocalDepth.cameraPosUniform = gl.getUniformLocation(shaderProgramFocalDepth, "uCameraPos");
+
+			shaderProgramFocalDepth.focalDistanceUniform = gl.getUniformLocation(shaderProgramFocalDepth, "uFDistance");
+		}
+
+
+        var shaderProgramDebugObject;
+
+        function initShadersDebugObjects() {
+            var fragmentShader = getShader(gl, "debug-shader-fs");
+            var vertexShader = getShader(gl, "debug-shader-vs");
+
+            shaderProgramDebugObject = gl.createProgram();
+            gl.attachShader(shaderProgramDebugObject, vertexShader);
+            gl.attachShader(shaderProgramDebugObject, fragmentShader);
+            gl.linkProgram(shaderProgramDebugObject);
+
+            if (!gl.getProgramParameter(shaderProgramDebugObject, gl.LINK_STATUS)) {
+                alert("Could not initialise shaders");
+            }
+
+            shaderProgramDebugObject.vertexPositionAttribute = gl.getAttribLocation(shaderProgramDebugObject, "aVertexPosition");
+            gl.enableVertexAttribArray(shaderProgramDebugObject.vertexPositionAttribute);
+
+            shaderProgramDebugObject.vertexNormalAttribute = gl.getAttribLocation(shaderProgramDebugObject, "aVertexNormal");
+            gl.enableVertexAttribArray(shaderProgramDebugObject.vertexNormalAttribute);
+
+
+            shaderProgramDebugObject.pMatrixUniform = gl.getUniformLocation(shaderProgramDebugObject, "uPMatrix");
+            shaderProgramDebugObject.modelMatrixUniform = gl.getUniformLocation(shaderProgramDebugObject, "uMMatrix");
+            shaderProgramDebugObject.viewMatrixUniform = gl.getUniformLocation(shaderProgramDebugObject, "uVMatrix");
+            shaderProgramDebugObject.nMatrixUniform = gl.getUniformLocation(shaderProgramDebugObject, "uNMatrix");
+        }
+
+
+
+		var shaderProgramBufferA;
+        function initShaderBufferA() 
+        {
+            var fragmentShader = getShader(gl, "shader-fs-bokeh-BufferA");
+            var vertexShader = getShader(gl, "shader-vs-postprocess");
+
+            shaderProgramBufferA = gl.createProgram();
+            gl.attachShader(shaderProgramBufferA, vertexShader);
+            gl.attachShader(shaderProgramBufferA, fragmentShader);
+            gl.linkProgram(shaderProgramBufferA);
+
+            if (!gl.getProgramParameter(shaderProgramBufferA, gl.LINK_STATUS)) {
+                alert("Could not initialise shaders");
+            }
+        }
+
+        var shaderProgramBufferB;
+        function initshaderBufferB() 
+        {
+            var fragmentShader = getShader(gl, "shader-fs-bokeh-BufferB");
+            var vertexShader = getShader(gl, "shader-vs-postprocess");
+
+            shaderProgramBufferB = gl.createProgram();
+            gl.attachShader(shaderProgramBufferB, vertexShader);
+            gl.attachShader(shaderProgramBufferB, fragmentShader);
+            gl.linkProgram(shaderProgramBufferB);
+
+            if(!gl.getProgramParameter(shaderProgramBufferB, gl.LINK_STATUS)) {
+                alert("Could not initialise shaders");
+            }
+        }
+
+        var shaderProgramBufferC;
+        function initshaderBufferC() 
+        {
+            var fragmentShader = getShader(gl, "shader-fs-bokeh-BufferC");
+            var vertexShader = getShader(gl, "shader-vs-postprocess");
+
+            shaderProgramBufferC = gl.createProgram();
+            gl.attachShader(shaderProgramBufferC, vertexShader);
+            gl.attachShader(shaderProgramBufferC, fragmentShader);
+            gl.linkProgram(shaderProgramBufferC);
+
+            if(!gl.getProgramParameter(shaderProgramBufferC, gl.LINK_STATUS)) {
+                alert("Could not initialise shaders");
+            }
+        }
+
+        var shaderProgramBufferD;
+        function initshaderBufferD() 
+        {
+            var fragmentShader = getShader(gl, "shader-fs-bokeh-BufferD");
+            var vertexShader = getShader(gl, "shader-vs-postprocess");
+
+            shaderProgramBufferD = gl.createProgram();
+            gl.attachShader(shaderProgramBufferD, vertexShader);
+            gl.attachShader(shaderProgramBufferD, fragmentShader);
+            gl.linkProgram(shaderProgramBufferD);
+
+            if(!gl.getProgramParameter(shaderProgramBufferD, gl.LINK_STATUS)) {
+                alert("Could not initialise shaders");
+            }
+        }
+
+
+
+		var shaderProgramBufferImage;
+		function initShaderBufferImage() 
+		{
+			var fragmentShader = getShader(gl, "shader-fs-bokeh-Image");
+			var vertexShader = getShader(gl, "shader-vs-postprocess");
+
+			shaderProgramBufferImage = gl.createProgram();
+			gl.attachShader(shaderProgramBufferImage, vertexShader);
+			gl.attachShader(shaderProgramBufferImage, fragmentShader);
+			gl.linkProgram(shaderProgramBufferImage);
+
+			if (!gl.getProgramParameter(shaderProgramBufferImage, gl.LINK_STATUS)) {
+				alert("Could not initialise shaders");
+			}
+		}
+
+        var shaderProgramLightingPhong;
+        function initShaderLightingPhong()
+        {
+            var fragmentShader = getShader(gl, "lighting-phong-fs");
+            var vertexShader = getShader(gl, "lighting-phong-vs");
+
+            shaderProgramLightingPhong = gl.createProgram();
+            gl.attachShader(shaderProgramLightingPhong, vertexShader);
+            gl.attachShader(shaderProgramLightingPhong, fragmentShader);
+            gl.linkProgram(shaderProgramLightingPhong);
+
+            if (!gl.getProgramParameter(shaderProgramLightingPhong, gl.LINK_STATUS)) {
+                alert("Could not initialise shaders");
+            }
+
+            shaderProgramLightingPhong.vertexPositionAttribute = gl.getAttribLocation(shaderProgramLightingPhong, "aVertexPosition");
+            gl.enableVertexAttribArray(shaderProgramLightingPhong.vertexPositionAttribute);
+
+            shaderProgramLightingPhong.vertexNormalAttribute = gl.getAttribLocation(shaderProgramLightingPhong, "aVertexNormal");
+            gl.enableVertexAttribArray(shaderProgramLightingPhong.vertexNormalAttribute);
+
+
+            shaderProgramLightingPhong.textureCoordAttribute = gl.getAttribLocation( shaderProgramLightingPhong, "aTextureCoord");
+            gl.enableVertexAttribArray(shaderProgramLightingPhong.textureCoordAttribute);
+
+            shaderProgramLightingPhong.pMatrixUniform = gl.getUniformLocation(shaderProgramLightingPhong, "uPMatrix");
+            shaderProgramLightingPhong.modelMatrixUniform = gl.getUniformLocation(shaderProgramLightingPhong, "uMMatrix");
+            shaderProgramLightingPhong.viewMatrixUniform = gl.getUniformLocation( shaderProgramLightingPhong, "uVMatrix");
+            //shaderProgramLightingPhong.nMatrixUniform = gl.getUniformLocation(shaderProgramLightingPhong, "uNMatrix");
+
+            //shaderProgramLightingPhong.objectColorUniform = gl.getUniformLocation(shaderProgramLightingPhong, "objectColor");
+            shaderProgramLightingPhong.lightColorUniform = gl.getUniformLocation(shaderProgramLightingPhong, "lightColor");
+            shaderProgramLightingPhong.lightPosUniform = gl.getUniformLocation(shaderProgramLightingPhong, "lightPos");
+            shaderProgramLightingPhong.viewPosUniform = gl.getUniformLocation(shaderProgramLightingPhong, "viewPos"); 
+        }
+
+        var shaderProgramBufferRendToText;
+        function initShadersRendToText() 
+        {
+            var fragmentShader = getShader(gl, "rend-to-texture-fs");
+            var vertexShader = getShader(gl, "rend-to-texture-vs");
+
+            shaderProgramBufferRendToText = gl.createProgram();
+            gl.attachShader(shaderProgramBufferRendToText, vertexShader);
+            gl.attachShader(shaderProgramBufferRendToText, fragmentShader);
+            gl.linkProgram(shaderProgramBufferRendToText);
+
+            if (!gl.getProgramParameter(shaderProgramBufferRendToText, gl.LINK_STATUS)) {
+                alert("Could not initialise shaders");
+            }
+        }
+
+
+		function handleLoadedTexture(texture) {
+			gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true);
+			gl.bindTexture(gl.TEXTURE_2D, texture);
+			gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, texture.image);
+			gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+			gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+			//gl.generateMipmap(gl.TEXTURE_2D);
+
+			gl.bindTexture(gl.TEXTURE_2D, null);
+		}
+
+		function isPowerOf2(value) {
+            return (value & (value - 1)) == 0;
+        }
+
+		function loadTexture(url) {
+            const texture = gl.createTexture();
+            gl.bindTexture(gl.TEXTURE_2D, texture);
+
+            // Because images have to be downloaded over the internet
+            // they might take a moment until they are ready.
+            // Until then put a single pixel in the texture so we can 
+            // use it immediately. When the image has finished downloading
+            // we'll update the texture with the contents of the image.
+            const level = 0;
+            const internalFormal = gl.RGBA;
+            const width = 1;
+            const height = 1;
+            const border = 0;
+            const srcFormat = gl.RGBA;
+            const srcType = gl.UNSIGNED_BYTE;
+            const pixel = new Uint8Array([0, 0, 255, 255]); // opaque blue
+            gl.texImage2D(gl.TEXTURE_2D, level, internalFormal, width, height, border, srcFormat, srcType, pixel);
+
+            const image = new Image();
+            image.onload = function() {
+                gl.bindTexture(gl.TEXTURE_2D, texture);
+                gl.texImage2D(gl.TEXTURE_2D, level, internalFormal, srcFormat, srcType, image);
+
+                // WebGL1 has different requirements for power of 2 images
+                // vs non power of 2 images so check if the image is a 
+                // power of 2 in both dimensions
+                if (isPowerOf2(image.width) && isPowerOf2(image.height)) {
+                    // Yes, it's a power of 2. Generate mips.
+                    gl.generateMipmap(gl.TEXTURE_2D);
+                } else {
+                    // No, it's not a power of 2. Turn of mips and set
+                    // wrapping to clamp to edge
+                    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.REPEAT);
+                    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.REPEAT);
+                    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+                }
+            };
+            image.src = url;
+
+            return texture;
+        }
+
+        function Camera3D() {
+        	// Camera attributes
+        	this.Position = [];
+        	this.Front = [];
+        	this.Up = [];
+        	this.Right = [];
+        	this.WorldUp = [];
+        	// Euler Angles
+        	this.Yaw = [];
+        	this.Pitch = [];
+        	// Camera options
+        	this.MovementSpeed = [];
+        	this.MouseSensitivity = [];
+        	this.Zoom = [];
+        	this.screenWIDTH = [];
+        	this.screenHEIGHT = [];
+        	// DEFAULT VALUES
+        	this.YAW = -90.0;
+        	this.PITCH = 0.0;
+        	this.SPEED = 10.0;
+        	this.SENSITIVITY = 0.25;
+        	this.ZOOM = 45.0;
+        	this.SCROLLSENSITIVITY = 0.05;
+
+        	this.Near = 0.1;
+        	this.Far = 8000;
+
+        	this.Camera = function(WIDTH, HEIGHT) {
+        		var position = vec3.create();
+        		var up = vec3.create(0.0, 1.0, 0.0);
+        		var yaw = this.YAW;
+        		var pitch = this.PITCH;
+        		this.Front = vec3.fromValues(0.0, 0.0, -1.0);
+        		this.MovementSpeed = this.SPEED;
+        		this.MouseSensitivity = this.SENSITIVITY;
+        		this.Zoom = this.ZOOM;
+        		this.Position = position;
+        		this.WorldUp = up;
+        		this.Yaw = yaw;
+        		this.Pitch = pitch;
+        		this.screenWIDTH = WIDTH;
+        		this.screenHEIGHT = HEIGHT;
+        		this.updateCameraVectors();
+        	},
+
+        	this.CameraSetPos = function(position, WIDTH, HEIGHT) {
+        		var up = vec3.fromValues(0.0, 1.0, 0.0);
+        		var yaw = this.YAW;
+        		var pitch = this.PITCH;
+        		this.Front = vec3.fromValues(0.0, 0.0, -1.0);
+        		this.MovementSpeed = this.SPEED;
+        		this.MouseSensitivity = this.SENSITIVITY;
+        		this.Zoom = this.ZOOM;
+        		this.Position = position;
+        		this.WorldUp = up;
+        		this.Yaw = yaw;
+        		this.Pitch = pitch;
+        		this.screenWIDTH = WIDTH;
+        		this.screenHEIGHT = HEIGHT;
+        		this.updateCameraVectors();
+        	},
+
+        	this.Camera = function(position, up, yaw, pitch, WIDTH, HEIGHT) {
+        		this.Front = vec3.fromValues(0.0, 0.0, -1.0);
+        		this.MovementSpeed = this.SPEED;
+        		this.MouseSensitivity = this.SENSITIVITY;
+        		this.Zoom = this.ZOOM;
+        		this.Position = position;
+        		this.WorldUp = up;
+        		this.Yaw = yaw;
+        		this.Pitch = pitch;
+        		this.screenWIDTH = WIDTH;
+        		this.screenHEIGHT = HEIGHT;
+        		this.updateCameraVectors();
+        	},
+
+        	this.Camera = function(posX, posY, posZ, upX, upY, upZ, yaw, pitch, WIDTH, HEIGHT) {
+        		this.Front = vec3.fromValues(0.0, 0.0, -1.0);
+        		this.MovementSpeed = this.SPEED;
+        		this.MouseSensitivity = this.SENSITIVITY;
+        		this.Zoom = this.ZOOM;
+        		this.Position = vec3.fromValues(posX, posY, posZ);
+        		this.WorldUp = vec3.fromValues(upX, upY, upZ);
+        		this.Yaw = yaw;
+        		this.Pitch = pitch;
+        		this.screenWIDTH = WIDTH;
+        		this.screenHEIGHT = HEIGHT;
+        		this.updateCameraVectors();
+        	},
+
+        	this.GetViewMatrix = function() {
+        		var retMat = mat4.create();
+        		var center = vec3.create();
+        		vec3.add(center, this.Position, this.Front);
+
+        		mat4.lookAt(retMat, this.Position, center, this.Up);
+        		return retMat;
+        	},
+
+        	this.GetProjectionMatrix = function() {
+        		var pPatrix = mat4.create();
+				mat4.perspective(pMatrix, this.convertToRadians(45), this.screenWIDTH/this.screenHEIGHT, this.Near, this.Far);
+				return pMatrix;
+				
+        	},
+
+        	this.ProcessKeyboard = function(direction, deltaTime) {
+        		var velocity = this.MovementSpeed * deltaTime;
+        		// FORWARD DIRECTION
+        		if (direction == 0) {
+        			var aux = vec3.fromValues(this.Front[0] * velocity, this.Front[1] * velocity, this.Front[2] * velocity);
+        			vec3.add(this.Position, this.Position, aux);
+        		}
+        		// BACKWARD DIRECTION
+        		if (direction == 1) {
+        			var aux = vec3.fromValues(-1 * this.Front[0] * velocity, -1 * this.Front[1] * velocity, -1 * this.Front[2] * velocity);
+        			vec3.add(this.Position, this.Position, aux);
+        		}
+        		// LEFT DIRECTION
+        		if (direction == 2) {
+        			var aux = vec3.fromValues(-1 * this.Right[0] * velocity, -1 * this.Right[1] * velocity, -1 * this.Right[2] * velocity);
+        			vec3.add(this.Position, this.Position, aux);
+        		}
+        		// RIGHT DIRECTION
+        		if (direction == 3) {
+        			var aux = vec3.fromValues(this.Right[0] * velocity, this.Right[1] * velocity, this.Right[2] * velocity);
+        			vec3.add(this.Position, this.Position, aux);
+        		}
+        	},
+
+        	this.ProcessMouseMovement = function(xoffset, yoffset, constrainPitch) {
+        		constrainPitch = true;
+        		xoffset = this.MouseSensitivity * xoffset;
+        		yoffset = this.MouseSensitivity * yoffset;
+
+        		this.Yaw = this.Yaw + xoffset;
+        		this.Pitch = this.Pitch + yoffset;
+
+        		// Make sure that when pitch is out of bounds, screen doesn't get flipped
+        		if (constrainPitch) {
+        			if (this.Pitch > 89.0) {
+        				this.Pitch = 89.0;
+        			}
+        			if (this.Pitch < -89.0) {
+        				this.Pitch = -89.0;
+        			}
+        		}
+        		// Update Front, Right and Up vectors using the updater Euler Angles
+        		this.updateCameraVectors();
+        	},
+
+        	this.ProcessMouseScroll = function(yoffset) {
+        		if (this.Zoom >= 1.0 && this.Zoom <= 45.0) {
+        			this.Zoom -= yoffset * SCROLLSENSITIVITY;
+        		}
+        		if (this.Zoom <= 1.0) {
+        			this.Zoom = 1.0;
+        		}
+        		if (this.Zoom >= 45.0) {
+        			this.Zoom = 45.0;
+        		}
+        	},
+
+        	this.convertToRadians = function(degrees) {
+        		return (degrees * (0.01745329251994329576923690768489));
+        	}
+
+        	this.updateCameraVectors = function() {
+        		// Calculate the new Front vector
+        		var front = vec3.create();
+        		front[0] = Math.cos(this.convertToRadians(this.Yaw)) * Math.cos(this.convertToRadians(this.Pitch));
+        		front[1] = Math.sin(this.convertToRadians(this.Pitch));
+        		front[2] = Math.sin(this.convertToRadians(this.Yaw)) * Math.cos(this.convertToRadians(this.Pitch));
+        		var _aux = vec3.create();
+        		vec3.normalize(this.Front, front);
+        		// Also re-calculate the Right and Up Vectors
+        		// Normalize the vectors, because their length gets closer to 0 the more you look up or down which results in slower movement.
+        		var aux = vec3.create();
+        		vec3.cross(aux, this.Front, this.WorldUp);
+        		vec3.normalize(this.Right, aux);
+        		aux = vec3.create();
+        		vec3.cross(aux, this.Right, this.Front);
+        		vec3.normalize(this.Up, aux);
+        	},
+
+        	this.GetNearValue = function() {
+        		return this.Near;
+        	},
+
+        	this.GetFarValue = function() {
+        		return this.Far;
+        	},
+
+            this.SetPositionAndDirectionCamera = function(position, pitch, yaw) {
+                this.Position = position;
+                this.Yaw = yaw;
+                this.Pitch = pitch;
+                this.updateCameraVectors();
+            }
+        }
+
+		var earthTexture;
+		var galvanizedTexture;
+		var metalsurfaceTexture;
+
+		function initTextures() {
+			galvanizedTexture = loadTexture("http://localhost/POC_DoF_Adv/3D_Scene/nature.jpg");
+            //galvanizedTexture = loadTexture("http://localhost/POC_DoF_Adv/3D_Scene/red_texture.jpg");
+			metalsurfaceTexture = loadTexture("http://localhost/POC_DoF_Adv/3D_Scene/metal_texture.jpg");
+			checkerGrayTexture = loadTexture("http://localhost/POC_DoF_Adv/3D_Scene/checker_grey_pot.jpg");
+		}
+
+		function createAndSetupTexture() 
+	    {
+	        var texture = gl.createTexture();
+	        gl.bindTexture(gl.TEXTURE_2D, texture);
+
+	        // Set up texture so we can render any size image and so we are working with pixels.
+	        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+	        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+	        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
+	        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+
+	        return texture;                
+	    }
+
+		var mMatrix = mat4.create();
+		var mvMatrixStack = [];
+		var pMatrix = mat4.create();
+		var vMatrix = mat4.create();
+
+		function mvPushMatrix() {
+			var copy = mat4.create();
+			mat4.set(mvMatrix, copy);
+			mvMatrixStack.push(copy);
+		}
+
+		function mvPopMatrix() {
+			if (mvMatrixStack.length == 0) {
+				throw "Invalid popMatrix!";
+			}
+			mvMatrix = mvMatrixStack.pop();
+		}
+
+		function setMatrixUniforms(program) {
+			gl.uniformMatrix4fv(program.pMatrixUniform, false, pMatrix);
+			gl.uniformMatrix4fv(program.modelMatrixUniform, false, mMatrix);
+
+			gl.uniformMatrix4fv(program.viewMatrixUniform, false, vMatrix);
+
+			//console.log(vMatrix);
+			if (((program == shaderProgram) || (program == shaderProgramDebugObject)) || (program == shaderProgramLightingPhong)) {
+				var normalMatrix = mat3.create();
+				mat3.normalFromMat4(normalMatrix, mMatrix)
+				//mat4.toInverseMat3(mvMatrix, normalMatrix);
+				//mat3.transpose(normalMatrix);
+				gl.uniformMatrix3fv(program.nMatrixUniform, false, normalMatrix);	
+			}
+
+		}
+
+		function degToRad(degrees) {
+			return degrees * Math.PI / 180;
+		}
+
+		function initScreenFillingBuffers() {
+			screenFillingVertexPositionBuffer = gl.createBuffer();
+			gl.bindBuffer(gl.ARRAY_BUFFER, screenFillingVertexPositionBuffer);
+			vertices = [
+                 1.0,  1.0,  0.0,
+                -1.0,  1.0,  0.0,
+                 1.0, -1.0,  0.0,
+                -1.0, -1.0,  0.0
+            ];
+            gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(vertices), gl.STATIC_DRAW);
+            screenFillingVertexPositionBuffer.itemSize = 3;
+            screenFillingVertexPositionBuffer.numItems = 4;
+
+            screenFillingTextureCoordBuffer = gl.createBuffer();
+            gl.bindBuffer(gl.ARRAY_BUFFER, screenFillingTextureCoordBuffer);
+            var textureCoords = [
+                1.0, 1.0,
+                0.0, 1.0,
+                1.0, 0.0,
+                0.0, 0.0
+            ];
+
+            gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(textureCoords), gl.STATIC_DRAW);
+            screenFillingTextureCoordBuffer.itemSize = 2;
+            screenFillingTextureCoordBuffer.numItems = 4;
+
+            screenFillingIndexBuffer = gl.createBuffer();
+            gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, screenFillingIndexBuffer);
+            var squareVertexIndices = [
+                0, 1, 3,    0, 3, 2
+            ];
+            gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, new Uint16Array(squareVertexIndices), gl.STATIC_DRAW);
+            screenFillingIndexBuffer.itemSize = 1;
+            screenFillingIndexBuffer.numItems = 6;
+		}
+
+
+
+
+		var teapotPositionBuffer;
+		var teapotVertexNormalBuffer;
+		var teapotVertexTextureCoordBuffer;
+		var teapotVertexIndexBuffer;
+
+		function handleLoadedTeapot(teapotData) {
+			teapotVertexNormalBuffer = gl.createBuffer();
+			gl.bindBuffer(gl.ARRAY_BUFFER, teapotVertexNormalBuffer);
+			gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(teapotData.vertexNormals), gl.STATIC_DRAW);
+			teapotVertexNormalBuffer.itemSize = 3;
+			teapotVertexNormalBuffer.numItems = teapotData.vertexNormals.length / 3;
+
+			teapotVertexTextureCoordBuffer = gl.createBuffer();
+			gl.bindBuffer(gl.ARRAY_BUFFER, teapotVertexTextureCoordBuffer);
+			gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(teapotData.vertexTextureCoords), gl.STATIC_DRAW);
+			teapotVertexTextureCoordBuffer.itemSize = 2;
+			teapotVertexTextureCoordBuffer.numItems = teapotData.vertexTextureCoords.length / 2;
+
+			teapotVertexPositionBuffer = gl.createBuffer();
+			gl.bindBuffer(gl.ARRAY_BUFFER, teapotVertexPositionBuffer);
+			gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(teapotData.vertexPositions), gl.STATIC_DRAW);
+			teapotVertexPositionBuffer.itemSize = 3;
+			teapotVertexPositionBuffer.numItems = teapotData.vertexPositions.length / 3;
+
+			teapotVertexIndexBuffer = gl.createBuffer();
+			gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, teapotVertexIndexBuffer);
+			gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, new Uint16Array(teapotData.indices), gl.STATIC_DRAW);
+			teapotVertexIndexBuffer.itemSize = 1;
+			teapotVertexIndexBuffer.numItems = teapotData.indices.length;
+
+			//document.getElementById("loadingtext").textContent = "";
+		}
+
+		function loadTeapot() {
+			var request = new XMLHttpRequest();
+			request.open("GET", "http://localhost/POC_DoF_Adv/3D_Scene/Teapot.json");
+			request.onreadystatechange = function() {
+				if (request.readyState == 4) {
+					handleLoadedTeapot(JSON.parse(request.responseText));
+				}
+			}
+			request.send();
+		}
+
+		var planeVertexPositionBuffer;
+		var planeVertexNormalBuffer;
+		var planeVertexTextureCoordBuffer;
+		var planeVertexIndexBuffer;
+
+		function initBuffersPlane() {
+			planeVertexNormalBuffer = gl.createBuffer();
+			gl.bindBuffer(gl.ARRAY_BUFFER, planeVertexNormalBuffer);
+			var normals = [
+				0.0, 1.0, 0.0,
+				0.0, 1.0, 0.0,
+				0.0, 1.0, 0.0,
+				0.0, 1.0, 0.0
+			];
+			gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(normals), gl.STATIC_DRAW);
+			planeVertexNormalBuffer.itemSize = 3;
+			planeVertexNormalBuffer.numItems = 4;
+
+			planeVertexTextureCoordBuffer = gl.createBuffer();
+			gl.bindBuffer(gl.ARRAY_BUFFER, planeVertexTextureCoordBuffer);
+			var textureCoords = [
+				0.0, 0.0,
+				10.0, 0.0,
+				10.0, 10.0,
+				0.0, 10.0
+			];
+			gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(textureCoords), gl.STATIC_DRAW);
+			planeVertexTextureCoordBuffer.itemSize = 2;
+			planeVertexTextureCoordBuffer.numItems = 4;
+
+			planeVertexPositionBuffer = gl.createBuffer();
+			gl.bindBuffer(gl.ARRAY_BUFFER, planeVertexPositionBuffer);
+			var vertices = [
+				-1.0, 0.0, 1.0,
+				1.0, 0.0, 1.0,
+				1.0, 0.0, -1.0,
+				-1.0, 0.0, -1.0
+			];
+			// var vertices = [
+			// 	-1.0, -1.0, 0.0,
+			// 	1.0, -1.0, 0.0,
+			// 	1.0, 1.0, 0.0,
+			// 	-1.0, 1.0, 0.0
+			// ];
+			gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(vertices), gl.STATIC_DRAW);
+			planeVertexPositionBuffer.itemSize = 3;
+			planeVertexPositionBuffer.numItems = 4;
+
+
+			planeVertexIndexBuffer = gl.createBuffer();
+			gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, planeVertexIndexBuffer);
+			var indices = [
+				0, 1, 2, 
+				0, 2, 3
+			];
+			gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, new Uint16Array(indices), gl.STATIC_DRAW);
+			planeVertexIndexBuffer.itemSize = 1;
+			planeVertexIndexBuffer.numItems = 6;
+		}
+
+        var sphereVertexPositionBuffer;
+        var sphereVertexNormalBuffer;
+        var sphereVertexTextureCoordBuffer;
+        var sphereVertexIndexBuffer;
+
+        function initBuffersSphere() {
+            sphereVertexPositionBuffer = gl.createBuffer();
+            gl.bindBuffer(gl.ARRAY_BUFFER, sphereVertexPositionBuffer);
+            gl.bufferData(gl.ARRAY_BUFFER, sphereGeomParams.vertexPositions, gl.STATIC_DRAW);
+            sphereVertexPositionBuffer.itemSize = 3;
+            sphereVertexPositionBuffer.numItems = sphereGeomParams.vertexPositions.length;
+
+
+            sphereVertexNormalBuffer = gl.createBuffer();
+            gl.bindBuffer(gl.ARRAY_BUFFER, sphereVertexNormalBuffer);
+            gl.bufferData(gl.ARRAY_BUFFER, sphereGeomParams.vertexNormals, gl.STATIC_DRAW);
+            sphereVertexNormalBuffer.itemSize = 3;
+            sphereVertexNormalBuffer.numItems = sphereGeomParams.vertexNormals.length;
+
+            sphereVertexTextureCoordBuffer = gl.createBuffer();
+            gl.bindBuffer(gl.ARRAY_BUFFER, sphereVertexTextureCoordBuffer);
+            gl.bufferData(gl.ARRAY_BUFFER, sphereGeomParams.vertexTextureCoords, gl.STATIC_DRAW);
+            sphereVertexTextureCoordBuffer.itemSize = 2;
+            sphereVertexTextureCoordBuffer.numItems = sphereGeomParams.vertexTextureCoords.length;
+
+            sphereVertexIndexBuffer = gl.createBuffer();
+            gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, sphereVertexIndexBuffer);
+            gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, sphereGeomParams.indices, gl.STATIC_DRAW);
+            sphereVertexIndexBuffer.itemSize = 1;
+            sphereVertexIndexBuffer.numItems = sphereGeomParams.indices.length;
+        }
+
+
+		var focalPlaneVertexPositionBuffer;
+		var focalPlaneIndexBuffer;
+
+		function initBuffersFocalPlane() {
+			focalPlaneVertexPositionBuffer = gl.createBuffer();
+			gl.bindBuffer(gl.ARRAY_BUFFER, focalPlaneVertexPositionBuffer);
+			var vertices = [
+				-1.0, -1.0, 0.0,
+				 1.0, -1.0, 0.0,
+				 1.0, 1.0, 0.0,
+				 -1.0, 1.0, 0.0
+			];
+
+			gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(vertices), gl.STATIC_DRAW);
+			focalPlaneVertexPositionBuffer.itemSize = 3;
+			focalPlaneVertexPositionBuffer.numItems = 4;
+
+			focalPlaneIndexBuffer = gl.createBuffer();
+			gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, focalPlaneIndexBuffer);
+			var indices = [
+				0, 1, 2,
+				0, 2, 3
+			];
+			gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, new Uint16Array(indices), gl.STATIC_DRAW);
+			focalPlaneIndexBuffer.itemSize = 1;
+			focalPlaneIndexBuffer.numItems = 6;
+		}
+
+		function drawFocalPlane(positionFocalPlane) {
+			gl.useProgram(shaderProgramFocalPlane);
+			gl.blendFunc(gl.SRC_ALPHA, gl.ONE);
+			gl.enable(gl.BLEND);
+			gl.disable(gl.DEPTH_TEST);
+
+
+			shaderProgramFocalPlane.vertexPositionAttribute = gl.getAttribLocation(shaderProgramFocalPlane, "aVertexPosition");
+			gl.enableVertexAttribArray(shaderProgramFocalPlane.vertexPositionAttribute);
+
+			shaderProgramFocalPlane.pMatrixUniform = gl.getUniformLocation(shaderProgramFocalPlane, "uPMatrix");
+			shaderProgramFocalPlane.modelMatrixUniform = gl.getUniformLocation(shaderProgramFocalPlane, "uMMatrix");
+			shaderProgramFocalPlane.viewMatrixUniform = gl.getUniformLocation(shaderProgramFocalPlane, "uVMatrix");
+
+			pMatrix = myCamera.GetProjectionMatrix();
+
+			mat4.identity(mMatrix);
+			vMatrix = myCamera.GetViewMatrix();
+
+			mat4.translate(mMatrix, mMatrix, [positionFocalPlane[0], positionFocalPlane[1], positionFocalPlane[2]]);
+			var aux = mat4.create();
+			mat4.fromScaling(aux, [100.0, 100.0, 100.0]);
+			mat4.multiply(mMatrix, mMatrix, aux);
+
+
+			gl.bindBuffer(gl.ARRAY_BUFFER, focalPlaneVertexPositionBuffer);
+			gl.vertexAttribPointer(shaderProgramFocalPlane.vertexPositionAttribute, focalPlaneVertexPositionBuffer.itemSize, gl.FLOAT, false, 0, 0);
+
+			gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, focalPlaneIndexBuffer);
+			setMatrixUniforms(shaderProgramFocalPlane);
+			gl.drawElements(gl.TRIANGLES, focalPlaneIndexBuffer.numItems, gl.UNSIGNED_SHORT, 0);
+
+			gl.disable(gl.BLEND);
+			gl.enable(gl.DEPTH_TEST);
+		}
+
+
+		function init3DScene() {
+			initBuffersPlane();
+			loadTeapot();
+			initBuffersFocalPlane();
+            initSphereObject();
+            initBuffersSphere();
+		}
+
+		function initCamera() {
+			//Camera : function(position, WIDTH, HEIGHT);
+			myCamera = new Camera3D();
+			var aux = vec3.fromValues(-13.34, 30.73, 51.12);
+			myCamera.CameraSetPos(aux, gl.viewportWidth, gl.viewportHeight);
+            var _pos = vec3.fromValues(-9.0000, 15.60, 31.27);
+            var _pitch = 13.75;
+            var _yaw = -90.0;
+            myCamera.SetPositionAndDirectionCamera(_pos, _pitch, _yaw);
+			lastX = gl.viewportWidth / 2.0;
+			lastY = gl.viewportHeight / 2.0;
+			console.log(myCamera);
+			console.log("bla");
+			//positionFocalPlane = myCamera.Position + 0.0 * myCamera.Front;
+		}
+
+
+		var teapotAngle = 180;
+
+
+		function drawTeapot(programShading, translatePos) {
+			gl.useProgram(programShading);
+			//gl.viewport(0, 0, gl.viewportWidth, gl.viewportHeight);
+			//gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+
+			if (teapotVertexPositionBuffer == null || teapotVertexNormalBuffer == null || teapotVertexTextureCoordBuffer == null || teapotVertexIndexBuffer == null) {
+				return;
+			}
+
+			pMatrix = myCamera.GetProjectionMatrix();
+
+			if (programShading == shaderProgram) {
+				gl.enableVertexAttribArray(programShading.vertexPositionAttribute);
+				gl.enableVertexAttribArray(programShading.vertexNormalAttribute);
+				gl.enableVertexAttribArray(programShading.textureCoordAttribute);
+				gl.uniform1i(programShading.showSpecularHighlightsUniform, 1);
+				var lighting = 1;
+				gl.uniform1i(programShading.useLightingUniform, lighting);
+
+				if (lighting) {
+					gl.uniform3f(
+						programShading.ambientColorUniform,
+						0.2, 0.2, 0.2
+					);
+
+					gl.uniform3f(
+						programShading.pointLightingLocationUniform, 
+						-10.0, 4.0, -20.0
+					);
+
+					gl.uniform3f(
+						programShading.pointLightingSpecularColorUniform,
+						0.8, 0.8, 0.8
+					);
+
+					gl.uniform3f(
+						programShading.pointLightingDiffuseColorUniform,
+						0.8, 0.8, 0.8
+					);
+				}
+				
+				gl.uniform1i(programShading.useTexturesUniform, 0);	
+
+				gl.activeTexture(gl.TEXTURE0);
+				gl.bindTexture(gl.TEXTURE_2D, galvanizedTexture);
+				gl.uniform1i(programShading.samplerUniform, 0);
+
+				gl.uniform1f(programShading.materialShininessUniform, 64.0);
+
+				gl.bindBuffer(gl.ARRAY_BUFFER, teapotVertexTextureCoordBuffer);
+				gl.vertexAttribPointer(programShading.textureCoordAttribute, teapotVertexTextureCoordBuffer.itemSize, gl.FLOAT, false, 0, 0);
+
+				gl.bindBuffer(gl.ARRAY_BUFFER, teapotVertexNormalBuffer);
+				gl.vertexAttribPointer(programShading.vertexNormalAttribute, teapotVertexNormalBuffer.itemSize, gl.FLOAT, false, 0, 0);
+			}
+			if (programShading == shaderProgramDepth) {
+				gl.enableVertexAttribArray(programShading.vertexPositionAttribute);
+				gl.disableVertexAttribArray(shaderProgram.vertexNormalAttribute);
+				gl.disableVertexAttribArray(shaderProgram.textureCoordAttribute);
+				gl.uniform1f(programShading.nearUniform, myCamera.GetNearValue());
+				gl.uniform1f(programShading.farUniform, myCamera.GetFarValue());
+			}
+			if (programShading == shaderProgramFocalDepth) {
+				gl.enableVertexAttribArray(programShading.vertexPositionAttribute);
+				gl.disableVertexAttribArray(shaderProgram.vertexNormalAttribute);
+				gl.disableVertexAttribArray(shaderProgram.textureCoordAttribute);
+				gl.uniform1f(programShading.nearUniform, myCamera.GetNearValue());
+				gl.uniform1f(programShading.farUniform, myCamera.GetFarValue());
+				
+				gl.uniform3f(programShading.cameraFrontsUniform, myCamera.Front[0], myCamera.Front[1], myCamera.Front[2]);
+				
+				gl.uniform3f(programShading.cameraPosUniform, myCamera.Position[0], myCamera.Position[1], myCamera.Position[2]);
+
+				gl.uniform3f(programShading.focalPlanePosUniform, positionFocalPlane[0], positionFocalPlane[1], positionFocalPlane[2]);
+
+				var aux = vec3.create();
+				vec3.scaleAndAdd(aux, myCamera.Position, positionFocalPlane, -1);
+				var uFdist = Math.sqrt(vec3.squaredLength(aux));
+
+				gl.uniform1f(programShading.focalDistanceUniform, uFocalDistance);
+				//console.log("uFdist: "+uFdist);
+			}
+            if (programShading == shaderProgramLightingPhong) {
+                //console.log("PHONG SHADING");
+
+                gl.enableVertexAttribArray(programShading.vertexPositionAttribute);
+                gl.enableVertexAttribArray(programShading.vertexNormalAttribute);
+                gl.enableVertexAttribArray(programShading.textureCoordAttribute);
+
+                gl.uniform3f(programShading.objectColorUniform, 1.0, 0.5, 0.31);
+                gl.uniform3f(programShading.lightColorUniform, 1.0, 1.0, 1.0);
+                gl.uniform3f(programShading.lightPosUniform, lightPos[0], lightPos[1], lightPos[1]);
+                gl.uniform3f(programShading.viewPosUniform, myCamera.Position[0], myCamera.Position[1], myCamera.Position[2]);
+
+                gl.uniform1i(gl.getUniformLocation(programShading, "uUseTexture"), 1);
+                gl.uniform1i(gl.getUniformLocation(programShading, "uDisableLighting"), 0);
+
+                gl.activeTexture(gl.TEXTURE0);
+                gl.bindTexture(gl.TEXTURE_2D, galvanizedTexture);
+                gl.uniform1i(gl.getUniformLocation(programShading, "material.diffuse"), 0);
+                gl.uniform1f(gl.getUniformLocation(programShading, "material.shininess"), 64.0);
+                gl.uniform1i(gl.getUniformLocation(programShading, "material.hasSpecular"), 1);
+
+
+                gl.uniform3f(gl.getUniformLocation(programShading, "dirLight.direction"), -0.2, -1, -0.3);
+                gl.uniform3f(gl.getUniformLocation(programShading, "dirLight.ambient"), 0.05, 0.05, 0.05);
+                gl.uniform3f(gl.getUniformLocation(programShading, "dirLight.diffuse"), 0.8, 0.8, 0.8);
+                gl.uniform3f(gl.getUniformLocation(programShading, "dirLight.specular"), 0.5, 0.5, 0.5);
+
+
+                gl.uniform3f(gl.getUniformLocation(programShading, "pointLights[0].position"), lightPointPos[0], lightPointPos[1], lightPointPos[2]);
+                gl.uniform3f(gl.getUniformLocation(programShading, "pointLights[0].ambient"), 1.00, 0.05, 0.05);
+                gl.uniform3f(gl.getUniformLocation(programShading, "pointLights[0].diffuse"), 0.0, 0.0, 0.0);
+                gl.uniform3f(gl.getUniformLocation(programShading, "pointLights[0].specular"), 5.0, 5.0, 5.0);
+                gl.uniform1f(gl.getUniformLocation(programShading, "pointLights[0].constant"), 1.0);
+                gl.uniform1f(gl.getUniformLocation(programShading, "pointLights[0].linear"), 0.02);
+                gl.uniform1f(gl.getUniformLocation(programShading, "pointLights[0].quadratic"), 0.010);
+
+
+
+                gl.bindBuffer(gl.ARRAY_BUFFER, teapotVertexNormalBuffer);
+                gl.vertexAttribPointer(programShading.vertexNormalAttribute, teapotVertexNormalBuffer.itemSize, gl.FLOAT, false, 0, 0);
+
+                gl.bindBuffer(gl.ARRAY_BUFFER, teapotVertexTextureCoordBuffer);
+                gl.vertexAttribPointer(programShading.textureCoordAttribute, teapotVertexTextureCoordBuffer.itemSize, gl.FLOAT, false, 0, 0);
+            }
+			
+
+			mat4.identity(mMatrix);
+			mat4.identity(vMatrix);
+			vMatrix = myCamera.GetViewMatrix();
+
+			mat4.translate(mMatrix, mMatrix, [translatePos[0], translatePos[1], translatePos[2]]);
+			//mat4.rotate(mMatrix, mMatrix, degToRadasaww(23.4), [1, 0, 0]);
+			//mat4.rotate(mMatrix, mMatrix, degToRad(teapotAngle), [0, 1, 0]);
+
+			
+			gl.bindBuffer(gl.ARRAY_BUFFER, teapotVertexPositionBuffer);
+			gl.vertexAttribPointer(programShading.vertexPositionAttribute, teapotVertexPositionBuffer.itemSize, gl.FLOAT, false, 0, 0);
+
+			
+			gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, teapotVertexIndexBuffer);
+			setMatrixUniforms(programShading);
+			gl.drawElements(gl.TRIANGLES, teapotVertexIndexBuffer.numItems, gl.UNSIGNED_SHORT, 0);
+		}
+
+		function drawPlane(programShading) {
+			gl.useProgram(programShading);
+			//mat4.perspectiveAlt(45, gl.viewportWidth / gl.viewportHeight, 0.1, 500.0, pMatrix);
+			pMatrix = myCamera.GetProjectionMatrix();
+
+			if (programShading == shaderProgram) {
+				gl.enableVertexAttribArray(programShading.vertexPositionAttribute);
+				gl.enableVertexAttribArray(programShading.vertexNormalAttribute);
+				gl.enableVertexAttribArray(programShading.textureCoordAttribute);
+
+				gl.uniform1i(programShading.showSpecularHighlightsUniform, 1);
+				var lighting = 1;
+				gl.uniform1i(programShading.useLightingUniform, lighting);
+
+				if (lighting) {
+					gl.uniform3f(
+						programShading.ambientColorUniform,
+						0.2, 0.2, 0.2
+					);
+
+					gl.uniform3f(
+						programShading.pointLightingLocationUniform, 
+						-10.0, 4.0, -20.0
+					);
+
+					gl.uniform3f(
+						programShading.pointLightingSpecularColorUniform,
+						0.8, 0.8, 0.8
+					);
+
+					gl.uniform3f(
+						programShading.pointLightingDiffuseColorUniform,
+						0.8, 0.8, 0.8
+					);
+				}
+
+				gl.uniform1i(programShading.useTexturesUniform, 1);
+
+				gl.activeTexture(gl.TEXTURE0);
+				gl.bindTexture(gl.TEXTURE_2D, checkerGrayTexture);
+				gl.uniform1i(programShading.samplerUniform, 0);
+
+				gl.uniform1f(programShading.materialShininessUniform, 32.0);
+
+				gl.bindBuffer(gl.ARRAY_BUFFER, planeVertexTextureCoordBuffer);
+				gl.vertexAttribPointer(programShading.textureCoordAttribute, planeVertexTextureCoordBuffer.itemSize, gl.FLOAT, false, 0, 0);
+
+				gl.bindBuffer(gl.ARRAY_BUFFER, planeVertexNormalBuffer);
+				gl.vertexAttribPointer(programShading.vertexNormalAttribute, planeVertexNormalBuffer.itemSize, gl.FLOAT, false, 0, 0);
+
+			}
+			if (programShading == shaderProgramDepth) {
+				gl.enableVertexAttribArray(programShading.vertexPositionAttribute);
+				gl.disableVertexAttribArray(shaderProgram.vertexNormalAttribute);
+				gl.disableVertexAttribArray(shaderProgram.textureCoordAttribute);
+				gl.uniform1f(programShading.nearUniform, myCamera.GetNearValue());
+				gl.uniform1f(programShading.farUniform, myCamera.GetFarValue());
+			}
+			if (programShading == shaderProgramFocalDepth) {
+				gl.enableVertexAttribArray(programShading.vertexPositionAttribute);
+				gl.disableVertexAttribArray(shaderProgram.vertexNormalAttribute);
+				gl.disableVertexAttribArray(shaderProgram.textureCoordAttribute);
+				gl.uniform1f(programShading.nearUniform, myCamera.GetNearValue());
+				gl.uniform1f(programShading.farUniform, myCamera.GetFarValue());
+				
+				gl.uniform3f(programShading.cameraFrontsUniform, myCamera.Front[0], myCamera.Front[1], myCamera.Front[2]);
+
+				//console.log(myCamera.Position[0]);
+				//console.log(myCamera.Position[1]);
+				//console.log(myCamera.Position[2]);
+				gl.uniform3f(programShading.cameraPosUniform, myCamera.Position[0], myCamera.Position[1], myCamera.Position[2]);
+
+				gl.uniform3f(programShading.focalPlanePosUniform, positionFocalPlane[0], positionFocalPlane[1], positionFocalPlane[2]);
+
+				var aux = vec3.create();
+				var _aux = vec3.create();
+				vec3.add(_aux, positionFocalPlane, myCamera.Position);
+				vec3.scaleAndAdd(aux, myCamera.Position, _aux, -1);
+				var uFdist = Math.sqrt(vec3.squaredLength(aux));
+				//console.log(uFdist);
+				//console.log(positionFocalPlane);
+				gl.uniform1f(programShading.focalDistanceUniform, uFocalDistance);
+
+			}
+            if (programShading == shaderProgramLightingPhong) {
+                //console.log("PHONG SHADING");
+
+                gl.enableVertexAttribArray(programShading.vertexPositionAttribute);
+                gl.enableVertexAttribArray(programShading.vertexNormalAttribute);
+                gl.enableVertexAttribArray(programShading.textureCoordAttribute);
+
+                gl.uniform3f(programShading.objectColorUniform, 1.0, 0.5, 0.31);
+                gl.uniform3f(programShading.lightColorUniform, 1.0, 1.0, 1.0);
+                gl.uniform3f(programShading.lightPosUniform, lightPos[0], lightPos[1], lightPos[1]);
+                gl.uniform3f(programShading.viewPosUniform, myCamera.Position[0], myCamera.Position[1], myCamera.Position[2]);
+
+                gl.uniform1i(gl.getUniformLocation(programShading, "uUseTexture"), 1);
+                gl.uniform1i(gl.getUniformLocation(programShading, "uDisableLighting"), 0);
+
+                gl.activeTexture(gl.TEXTURE0);
+                gl.bindTexture(gl.TEXTURE_2D, checkerGrayTexture);
+                gl.uniform1i(gl.getUniformLocation(programShading, "material.diffuse"), 0);
+                gl.uniform1f(gl.getUniformLocation(programShading, "material.shininess"), 1.0);
+                gl.uniform1i(gl.getUniformLocation(programShading, "material.hasSpecular"), 0);
+
+                gl.uniform3f(gl.getUniformLocation(programShading, "dirLight.direction"), -0.2, -1, -0.3);
+                gl.uniform3f(gl.getUniformLocation(programShading, "dirLight.ambient"), 0.05, 0.05, 0.05);
+                gl.uniform3f(gl.getUniformLocation(programShading, "dirLight.diffuse"), 0.8, 0.8, 0.8);
+                gl.uniform3f(gl.getUniformLocation(programShading, "dirLight.specular"), 0.5, 0.5, 0.5);
+
+                gl.uniform3f(gl.getUniformLocation(programShading, "pointLights[0].position"), lightPointPos[0], lightPointPos[1], lightPointPos[2]);
+                gl.uniform3f(gl.getUniformLocation(programShading, "pointLights[0].ambient"), 0.05, 0.05, 0.05);
+                gl.uniform3f(gl.getUniformLocation(programShading, "pointLights[0].diffuse"), 0.8, 0.8, 0.8);
+                gl.uniform3f(gl.getUniformLocation(programShading, "pointLights[0].specular"), 1.0, 1.0, 1.0);
+                gl.uniform1f(gl.getUniformLocation(programShading, "pointLights[0].constant"), 1.0);
+                gl.uniform1f(gl.getUniformLocation(programShading, "pointLights[0].linear"), 0.09);
+                gl.uniform1f(gl.getUniformLocation(programShading, "pointLights[0].quadratic"), 0.032);
+
+
+                gl.bindBuffer(gl.ARRAY_BUFFER, planeVertexNormalBuffer);
+                gl.vertexAttribPointer(programShading.vertexNormalAttribute, planeVertexNormalBuffer.itemSize, gl.FLOAT, false, 0, 0);
+
+                gl.bindBuffer(gl.ARRAY_BUFFER, planeVertexTextureCoordBuffer);
+                gl.vertexAttribPointer(programShading.textureCoordAttribute, planeVertexTextureCoordBuffer.itemSize, gl.FLOAT, false, 0, 0);
+            }
+			
+
+			mat4.identity(mMatrix);
+			var aux = mat4.create();
+			mat4.identity(aux);
+
+			mat4.identity(vMatrix);
+			//mat4.translate(vMatrix, vMatrix, [0, 0, -300]);
+			vMatrix = myCamera.GetViewMatrix();
+
+
+			// FIRST MATRIX TRANSFORMS
+			//mat4.translate(mvMatrix, [0.0, 0.0, -60]);
+			//mat4.rotate(mvMatrix, degToRad(23.4), [1, 1, 1]);
+			//mat4.rotate(mvMatrix, degToRad(teapotAngle), [0, 1, 0]);
+
+			// SECOND MATRIX TRANSFORMS
+			//mat4.scale(mvMatrix, [2.2, 2.2, 2.2]);
+			mat4.translate(mMatrix, mMatrix, [0, 0, -60]);
+			//mat4.fromScaling(mvMatrix, [8.2, 8.2, 8.2]); 
+
+			//mat4.translate(mvMatrix, aux, vec3.fromValues(0.5, 0.0, 0.0));
+			//mat4.rotate(mMatrix, mMatrix, degToRad(23.4), [1, 0, 0]);
+			//dsdwmat4.rotate(mMatrix, mMatrix, degToRad(teapotAngle), [0, 1, 0]);
+			//mat4.multiplyScalar(mvMatrix, mvMatrix, [1.0, 1.0, 1.0]);
+			mat4.fromScaling(aux, [2000.0, 2000.0, 2000.0]);
+			mat4.multiply(mMatrix, mMatrix, aux);
+
+			
+			gl.bindBuffer(gl.ARRAY_BUFFER, planeVertexPositionBuffer);
+			gl.vertexAttribPointer(programShading.vertexPositionAttribute, planeVertexPositionBuffer.itemSize, gl.FLOAT, false, 0, 0);
+
+			
+			gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, planeVertexIndexBuffer);
+			setMatrixUniforms(programShading);
+			gl.drawElements(gl.TRIANGLES, planeVertexIndexBuffer.numItems, gl.UNSIGNED_SHORT, 0);
+		}
+
+
+        function drawSphere(programShading, translatePos, scaleVal) {
+            gl.useProgram(programShading);
+
+            pMatrix = myCamera.GetProjectionMatrix();
+
+            if (programShading == shaderProgram) {
+                gl.enableVertexAttribArray(programShading.vertexPositionAttribute);
+                gl.enableVertexAttribArray(programShading.vertexNormalAttribute);
+                gl.enableVertexAttribArray(programShading.textureCoordAttribute);
+
+                gl.uniform1i(programShading.showSpecularHighlightUnigorm, 1);
+                var lighting = 1;
+                gl.uniform1i(programShading.useLightingUniform, lighting);
+
+                if (lighting) {
+                    gl.uniform3f(
+                        programShading.ambientColorUniform, 
+                        0.2, 0.2, 0.2
+                    );
+
+                    gl.uniform3f(
+                        programShading.pointLightingLocationUniform,
+                        -10.0, 4.0, -20.0  
+                    );
+
+                    gl.uniform3f(
+                        programShading.pointLightingSpecularColorUniform,
+                        0.8, 0.8, 0.8
+                    );
+
+                    gl.uniform3f(
+                        programShading.pointLightingDiffuseColorUniform,
+                        0.8, 0.8, 0.8
+                    );
+                }
+
+                gl.uniform1i(programShading.useTexturesUniform, 1);
+
+                gl.activeTexture(gl.TEXTURE0);
+                //gl.bindTexture(gl.TEXTURE_2D, sphereTexture);
+                gl.uniform1i(programShading.samplerUniform, 0);
+
+                gl.uniform1f(programShading.materialShininessUniform, 32.0);
+
+                gl.bindBuffer(gl.ARRAY_BUFFER, sphereVertexTextureCoordBuffer);
+                gl.vertexAttribPointer(programShading.textureCoordAttribute, sphereVertexTextureCoordBuffer.itemSize, gl.FLOAT, false, 0, 0);
+
+                gl.bindBuffer(gl.ARRAY_BUFFER, sphereVertexNormalBuffer);
+                gl.vertexAttribPointer(programShading.vertexNormalAttribute, sphereVertexNormalBuffer.itemSize, gl.FLOAT, false, 0, 0);
+            }
+            if (programShading == shaderProgramDepth) {
+                gl.enableVertexAttribArray(programShading.vertexPositionAttribute);
+                gl.disableVertexAttribArray(shaderProgram.vertexNormalAttribute);
+                gl.disableVertexAttribArray(shaderProgram.textureCoordAttribute);
+                gl.uniform1f(programShading.nearUniform, myCamera.GetNearValue());
+                gl.uniform1f(programShading.farUniform, myCamera.GetFarValue());
+            }
+            if (programShading == shaderProgramFocalDepth) 
+            {
+                gl.enableVertexAttribArray(programShading.vertexPositionAttribute);
+                gl.disableVertexAttribArray(shaderProgram.vertexNormalAttribute);
+                gl.disableVertexAttribArray(shaderProgram.textureCoordAttribute);
+                gl.uniform1f(programShading.nearUniform, myCamera.GetNearValue());
+                gl.uniform1f(programShading.farUniform, myCamera.GetFarValue());
+
+                gl.uniform3f(programShading.cameraFrontsUniform, myCamera.Front[0], myCamera.Front[1], myCamera.Front[2]);
+
+                gl.uniform3f(programShading.cameraPosUniform, myCamera.Position[0], myCamera.Position[1], myCamera.Position[2]);
+
+                gl.uniform3f(programShading.focalPlanePosUniform, positionFocalPlane[0], positionFocalPlane[1], positionFocalPlane[2]);
+
+                var aux = vec3.create();
+                var _aux = vec3.create();
+                vec3.add(_aux, positionFocalPlane, myCamera.Position);
+                vec3.scaleAndAdd(aux, myCamera.Position, _aux, -1);
+                var uFdist = Math.sqrt(vec3.squaredLength(aux));
+
+                gl.uniform1f(programShading.focalDistanceUniform, uFocalDistance);
+            }
+            if (programShading == shaderProgramDebugObject) {
+                gl.enableVertexAttribArray(programShading.vertexPositionAttribute);
+                gl.disableVertexAttribArray(shaderProgram.vertexNormalAttribute);
+                gl.disableVertexAttribArray(shaderProgram.textureCoordAttribute);
+                gl.enableVertexAttribArray(programShading.vertexNormalAttribute);
+
+                gl.bindBuffer(gl.ARRAY_BUFFER, sphereVertexNormalBuffer);
+                gl.vertexAttribPointer(programShading.vertexNormalAttribute, sphereVertexNormalBuffer.itemSize, gl.FLOAT, false, 0, 0);
+            }
+            if (programShading == shaderProgramLightingPhong) {
+                //console.log("PHONG SHADING");
+
+                gl.enableVertexAttribArray(programShading.vertexPositionAttribute);
+                gl.enableVertexAttribArray(programShading.vertexNormalAttribute);
+                gl.enableVertexAttribArray(programShading.textureCoordAttribute);
+
+                gl.uniform3f(programShading.objectColorUniform, 1.0, 0.5, 0.31);
+                gl.uniform3f(programShading.lightColorUniform, 1.0, 1.0, 1.0);
+                gl.uniform3f(programShading.lightPosUniform, lightPos[0], lightPos[1], lightPos[1]);
+                gl.uniform3f(programShading.viewPosUniform, myCamera.Position[0], myCamera.Position[1], myCamera.Position[2]);
+
+                gl.uniform1i(gl.getUniformLocation(programShading, "uUseTexture"), 0);
+                gl.uniform1i(gl.getUniformLocation(programShading, "uDisableLighting"), 1);
+
+                gl.activeTexture(gl.TEXTURE0); 
+                gl.bindTexture(gl.TEXTURE_2D, galvanizedTexture);
+                gl.uniform1i(gl.getUniformLocation(programShading, "material.diffuse"), 0);
+                gl.uniform1f(gl.getUniformLocation(programShading, "material.shininess"), 128.0);
+                gl.uniform1i(gl.getUniformLocation(programShading, "material.hasSpecular"), 1);
+
+
+                gl.uniform3f(gl.getUniformLocation(programShading, "dirLight.direction"), -0.2, -1, -0.3);
+                gl.uniform3f(gl.getUniformLocation(programShading, "dirLight.ambient"), 0.05, 0.05, 0.05);
+                gl.uniform3f(gl.getUniformLocation(programShading, "dirLight.diffuse"), 0.8, 0.8, 0.8);
+                gl.uniform3f(gl.getUniformLocation(programShading, "dirLight.specular"), 0.5, 0.5, 0.5);
+
+
+                gl.bindBuffer(gl.ARRAY_BUFFER, sphereVertexNormalBuffer);
+                gl.vertexAttribPointer(programShading.vertexNormalAttribute, sphereVertexNormalBuffer.itemSize, gl.FLOAT, false, 0, 0);
+
+                gl.bindBuffer(gl.ARRAY_BUFFER, sphereVertexTextureCoordBuffer);
+                gl.vertexAttribPointer(programShading.textureCoordAttribute, sphereVertexTextureCoordBuffer.itemSize, gl.FLOAT, false, 0, 0);
+            }
+
+
+
+            mat4.identity(mMatrix);
+            var aux = mat4.create();
+            mat4.identity(aux);
+
+            mat4.identity(vMatrix);
+            vMatrix = myCamera.GetViewMatrix();
+
+            mat4.translate(mMatrix, mMatrix, [translatePos[0], translatePos[1], translatePos[2]]);
+            mat4.fromScaling(aux, [scaleVal[0], scaleVal[1], scaleVal[2]]);
+            mat4.multiply(mMatrix, mMatrix, aux);
+
+            gl.bindBuffer(gl.ARRAY_BUFFER, sphereVertexPositionBuffer);
+            gl.vertexAttribPointer(programShading.vertexPositionAttribute, sphereVertexPositionBuffer.itemSize, gl.FLOAT, false, 0, 0);
+
+            gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, sphereVertexIndexBuffer);
+            setMatrixUniforms(programShading);
+            gl.drawElements(gl.TRIANGLES, sphereVertexIndexBuffer.numItems, gl.UNSIGNED_SHORT, 0);
+        }
+
+
+
+
+
+		function drawScene(programToDraw) {
+			gl.viewport(0, 0, gl.viewportWidth, gl.viewportHeight);
+			gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+
+			
+			drawPlane(programToDraw);
+			drawTeapot(programToDraw, vec3.fromValues(0, 8.0, 400.0));
+			drawTeapot(programToDraw, vec3.fromValues(0, 8.0, 100.0));
+			drawTeapot(programToDraw, vec3.fromValues(0, 8.0, 0.0));
+			drawTeapot(programToDraw, vec3.fromValues(0, 8.0, -60));
+			drawTeapot(programToDraw, vec3.fromValues(0, 8.0, -150));
+			drawTeapot(programToDraw, vec3.fromValues(0, 8.0, -300));
+			drawTeapot(programToDraw, vec3.fromValues(0, 8.0, -800));
+
+
+            drawSphere(programToDraw, vec3.fromValues(lightPointPos[0], lightPointPos[1], lightPointPos[2]), vec3.fromValues(2.0, 2.0, 2.0));
+
+            drawSphere(programToDraw, vec3.fromValues(0,55,0), vec3.fromValues(2.0, 2.0, 2.0));
+            drawSphere(programToDraw, vec3.fromValues(0,40,-20), vec3.fromValues(2.0, 2.0, 2.0));
+            drawSphere(programToDraw, vec3.fromValues(20,30,-40), vec3.fromValues(2.0, 2.0, 2.0));
+            drawSphere(programToDraw, vec3.fromValues(-30,20,-60), vec3.fromValues(2.0, 2.0, 2.0));
+            drawSphere(programToDraw, vec3.fromValues(-50,40,-120), vec3.fromValues(2.0, 2.0, 2.0));
+            drawSphere(programToDraw, vec3.fromValues(-80,25,-200), vec3.fromValues(2.0, 2.0, 2.0));
+
+            drawSphere(programToDraw, vec3.fromValues(20,55,-50), vec3.fromValues(2.0, 2.0, 2.0));
+            drawSphere(programToDraw, vec3.fromValues(-10,40,-90), vec3.fromValues(2.0, 2.0, 2.0));
+            drawSphere(programToDraw, vec3.fromValues(50,30,-100), vec3.fromValues(2.0, 2.0, 2.0));
+            drawSphere(programToDraw, vec3.fromValues(-60,20,-105), vec3.fromValues(2.0, 2.0, 2.0));
+            drawSphere(programToDraw, vec3.fromValues(-50,40,-120), vec3.fromValues(2.0, 2.0, 2.0));
+            drawSphere(programToDraw, vec3.fromValues(-35,25,-200), vec3.fromValues(2.0, 2.0, 2.0));
+			
+		}
+
+
+		function drawScreenFillingTextureBokeh() {
+			gl.useProgram(shaderProgramBufferImage);
+
+			shaderProgramBufferImage.vertexPositionAttribute = gl.getAttribLocation(shaderProgramBufferImage, "aVertexPosition");
+			gl.enableVertexAttribArray(shaderProgramBufferImage.vertexPositionAttribute);
+
+			shaderProgramBufferImage.textureCoordAttribute = gl.getAttribLocation(shaderProgramBufferImage, "aTextureCoord");
+			gl.enableVertexAttribArray(shaderProgramBufferImage.textureCoordAttribute);
+
+			shaderProgramBufferImage.samplerChannel0Uniform = gl.getUniformLocation(shaderProgramBufferImage, "iChannel0");
+			shaderProgramBufferImage.samplerChannel1Uniform = gl.getUniformLocation(shaderProgramBufferImage, "iChannel1");
+			shaderProgramBufferImage.samplerChannel2Uniform = gl.getUniformLocation(shaderProgramBufferImage, "iChannel2");
+			shaderProgramBufferImage.samplerChannel3Uniform = gl.getUniformLocation(shaderProgramBufferImage, "iChannel3");
+
+			shaderProgramBufferImage.samplerFocalDepthUniform = gl.getUniformLocation(shaderProgramBufferImage, "uSamplerFocalDepth");
+
+			shaderProgramBufferImage.resolutionUniform = gl.getUniformLocation(shaderProgramBufferImage, "iResolution");
+			shaderProgramBufferImage.timeUniform = gl.getUniformLocation(shaderProgramBufferImage, "iTime");
+
+            shaderProgramBufferImage.bokehStrengthUniform = gl.getUniformLocation(shaderProgramBufferImage, "bokehStrength");
+
+            gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+
+
+			gl.bindBuffer(gl.ARRAY_BUFFER, screenFillingVertexPositionBuffer);
+			gl.vertexAttribPointer(shaderProgramBufferImage.vertexPositionAttribute, screenFillingVertexPositionBuffer.itemSize, gl.FLOAT, false, 0, 0);
+
+			gl.bindBuffer(gl.ARRAY_BUFFER, screenFillingTextureCoordBuffer);
+			gl.vertexAttribPointer(shaderProgramBufferImage.textureCoordAttribute, screenFillingTextureCoordBuffer.itemSize, gl.FLOAT, false, 0, 0);
+
+			gl.activeTexture(gl.TEXTURE0);
+			gl.bindTexture(gl.TEXTURE_2D, textureFramebufferBufferABokeh);
+			gl.uniform1i(shaderProgramBufferImage.samplerChannel0Uniform, 0);
+
+			gl.activeTexture(gl.TEXTURE1);
+			gl.bindTexture(gl.TEXTURE_2D, textureFramebufferBufferBBokeh);
+			gl.uniform1i(shaderProgramBufferImage.samplerChannel1Uniform, 1);
+
+			gl.activeTexture(gl.TEXTURE2);
+			gl.bindTexture(gl.TEXTURE_2D, textureFramebufferBufferCBokeh);
+			gl.uniform1i(shaderProgramBufferImage.samplerChannel2Uniform, 2);
+
+			gl.activeTexture(gl.TEXTURE3);
+			gl.bindTexture(gl.TEXTURE_2D, textureFramebufferBufferDBokeh);
+			gl.uniform1i(shaderProgramBufferImage.samplerChannel3Uniform, 3);
+
+			gl.activeTexture(gl.TEXTURE4);
+			gl.bindTexture(gl.TEXTURE_2D, textureFramebufferFocalDepthScene);
+			gl.uniform1i(shaderProgramBufferImage.samplerFocalDepthUniform, 4);
+
+			gl.uniform3f(shaderProgramBufferImage.resolutionUniform, gl.viewportWidth, gl.viewportHeight, 1.0);
+			gl.uniform1f(shaderProgramBufferImage.timeUniform, elapsed);
+
+            gl.uniform1f(shaderProgramBufferImage.bokehStrengthUniform, bokehStrength);
+
+			gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, screenFillingIndexBuffer);
+			gl.drawElements(gl.TRIANGLES, screenFillingIndexBuffer.numItems, gl.UNSIGNED_SHORT, 0);
+		}
+
+        function drawScreenTexture(textureToDraw) {
+            gl.useProgram(shaderProgramBufferRendToText);
+
+            shaderProgramBufferRendToText.vertexPositionAttribute = gl.getAttribLocation(shaderProgramBufferRendToText, "aVertexPosition");
+            gl.enableVertexAttribArray(shaderProgramBufferRendToText.vertexPositionAttribute);
+
+            shaderProgramBufferRendToText.textureCoordAttribute = gl.getAttribLocation(shaderProgramBufferRendToText, "aTextureCoord");
+            gl.enableVertexAttribArray(shaderProgramBufferRendToText.textureCoordAttribute);
+
+            shaderProgramBufferRendToText.samplerUniform = gl.getUniformLocation(shaderProgramBufferRendToText, "uSampler");
+
+            shaderProgramBufferRendToText.modelMatrixUniform = gl.getUniformLocation(shaderProgramBufferRendToText, "model");
+
+            //gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT );
+            gl.disable(gl.DEPTH_TEST);
+
+            gl.bindBuffer(gl.ARRAY_BUFFER, screenFillingVertexPositionBuffer);
+            gl.vertexAttribPointer(shaderProgramBufferRendToText.vertexPositionAttribute, screenFillingVertexPositionBuffer.itemSize, gl.FLOAT, false, 0, 0);
+
+            gl.bindBuffer(gl.ARRAY_BUFFER, screenFillingTextureCoordBuffer);
+            gl.vertexAttribPointer(shaderProgramBufferRendToText.textureCoordAttribute, screenFillingTextureCoordBuffer.itemSize, gl.FLOAT, false, 0, 0);
+
+            gl.activeTexture(gl.TEXTURE0);
+            gl.bindTexture(gl.TEXTURE_2D, textureToDraw);
+            gl.uniform1i(shaderProgramBufferRendToText.samplerUniform, 0);
+
+            mat4.identity(mMatrix);
+            var aux = mat4.create();
+
+            mat4.fromScaling(aux, [1.0, 1.0, 1.0]);
+            mat4.multiply(mMatrix, mMatrix, aux);
+
+            gl.uniformMatrix4fv(shaderProgramBufferRendToText.modelMatrixUniform, false, mMatrix);
+
+            gl.uniform1i(gl.getUniformLocation(shaderProgramBufferRendToText, "uDrawBorder"), 1);
+
+            gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, screenFillingIndexBuffer);
+            gl.drawElements(gl.TRIANGLES, screenFillingIndexBuffer.numItems, gl.UNSIGNED_SHORT, 0);
+
+            mat4.fromScaling(aux, [0.97, 0.97, 1.0]);
+            mat4.multiply(mMatrix, mMatrix, aux);
+
+            gl.uniformMatrix4fv(shaderProgramBufferRendToText.modelMatrixUniform, false, mMatrix);
+
+            gl.uniform1i(gl.getUniformLocation(shaderProgramBufferRendToText, "uDrawBorder"), 0);
+
+            gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, screenFillingIndexBuffer);
+            gl.drawElements(gl.TRIANGLES, screenFillingIndexBuffer.numItems, gl.UNSIGNED_SHORT, 0);
+
+            gl.enable(gl.DEPTH_TEST);
+        }
+
+
+		var lastTime = 0;
+
+		function animate() {
+			var timeNow = new Date().getTime();
+			if (lastTime != 0) {
+				var elapsed = timeNow - lastTime;
+
+				teapotAngle += 0.05 * elapsed;
+			}
+			lastTime = timeNow;
+		}
+
+		function calculateDeltaTime() {
+			var currentFrame = new Date().getTime();
+			//deltaTime = (currentFrame - lastFrame)/10000;
+			//deltaTime = (currentFrame - lastFrame)/1000;
+			deltaTime = (currentFrame - lastFrame)/100;
+			//deltaTime = (currentFrame - lastFrame)/10;
+			//deltaTime = (currentFrame - lastFrame)/1;
+			lastFrame = currentFrame;
+		}
+
+		function debugCamera() {
+			console.log("CAMERA POSITION: "+myCamera.Position);
+            console.log("CAMERA PITCH: "+myCamera.Pitch);
+            console.log("CAMERA YAW: "+myCamera.Yaw);
+		}
+
+
+
+		function setupFocalPlane() {
+			//console.log("myCamera.Position: "+ myCamera.Position);
+			//console.log("myCamera.Front: "+ myCamera.Front);
+			var aux = vec3.create();
+			if (myCamera.Front[2] > 0) {
+				vec3.scale(aux, myCamera.Front, -distanceFocalPlane);	
+			} else  if (myCamera.Front[2] <= 0) {
+				vec3.scale(aux, myCamera.Front, distanceFocalPlane);	
+			}
+			var _aux = vec3.create();
+			vec3.add(_aux, myCamera.Position, aux);
+			//console.log("positionFocalPlane: " + _aux);
+			//console.log("LENGTH OF DIR VECTOR: "+ (Math.sqrt(vec3.sqrLen(myCamera.Front))));
+			positionFocalPlane = _aux;
+
+			//console.log("DIFFERENCE: "+ Math.sqrt(vec3.squaredDistance(positionFocalPlane, myCamera.Position)));
+		}
+
+		function clock() 
+		{
+			var timeNow = new Date().getTime();
+			if (time_start != 0)
+			{
+				elapsed = timeNow - time_start;
+				elapsed /= 1000;
+			}
+		}
+
+
+        function debugGaussian(samplePoint) {
+            var weight = 0;
+            var acum = 0;
+            for (var i = 0; i < 16; i++) {
+                weight = (1.0 / Math.sqrt(2.0 * Math.PI)) * Math.exp(-1 * Math.pow(i, 2)/2.0);    
+                acum += weight;
+            }
+            console.log(weight);
+        }
+
+        function split(array, first, last) {
+            // pivot value
+            var pivot = array[first];
+
+            // aux var
+            var tmp;
+
+            var left = first + 1;
+            var right = last;
+
+            do {    // Pivoting
+                while ((left <= right) && (array[left] <= pivot)) {
+                    left++;
+                }
+                while ((left <= right) && (array[right] > pivot)) {
+                    right--;
+                }
+                if (left < right) {
+                    tmp = array[left];
+                    array[left] = array[right];
+                    array[right] = tmp;
+                    right--;
+                    left++;
+                }
+            } while (left <= right);
+
+            // Place the pivot on his spot
+            tmp = array[first];
+            array[first] = array[right];
+            array[right] = tmp;
+
+            // Position of pivot
+            return right;
+        }
+
+        function quicksort (array, left, right) 
+        {
+            var pivot; // Pivot position
+
+            if (left < right) {
+                pivot = split(array, left, right);
+                quicksort(array, left, pivot - 1);
+                quicksort(array, pivot + 1, right);
+            }
+
+            return array;
+        }
+
+        // variables:
+        //  input -- the array of items to be sorted
+        //  key(x) -- function that returns the key for item x
+        //  k -- a number such that all keys are in the range 0..k-1
+        //  count -- an array of numbers, with indexes 0..k-1, initially all zero
+        //  output -- an array of items, with indexes 0..n-1
+        //  x -- an individual input item, used within the algorithm
+        //  total, oldCount i -- numbers used within the algorithm
+        function countsort(input, k) {
+            var _count = [];
+            var output = [];
+            var oldCount;
+            var total;
+
+            _count = Array.apply(null, Array(k)).map(Number.prototype.valueOf, 0);
+            // calculate the histogram of key frequencies:
+            for (var x = 0; x < k; x++) 
+                _count[input[x]] += 1;
+
+            // calculate the starting index for each key:
+            var total = 0;
+            for (var i = 0; i < k; i++) { // i - 0, 1, ... k - 1
+                oldCount = _count[i];
+                _count[i] = total;
+                total += oldCount;
+            }
+
+            // copy to output array, preserving order of inputs with equal keys
+            for (var x = 0; x < k; x++) {
+                output[_count[input[x]]] = x;
+                _count[input[x]] += 1;
+            }
+
+            return output;
+        }
+
+        function interchangesort(array) {
+            // We use an anidated loop
+            for (var i = 0; i < array.length-1; i++) {
+                for (var j =i+1; j < array.length; j++) {
+                    if (array[i] > array[j]) {
+                        // Interchange of values
+                        var auxvar = array[i];
+                        array[i] = array[j];
+                        array[j] = auxvar;
+                    }
+                }
+            }
+            return array;
+        }
+
+        function debugSorting() {
+            var a = [0, 1, 3, 2, 5, 3, 7, 6, 9, 11, 10, 1];
+            //a = quicksort(a, 0, a.length-1);
+            //a = countsort(a, a.length);
+            a = interchangesort(a);
+        }
+
+		function tick() {
+			//gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+			//gl.viewport(0, 0, gl.viewportWidth, gl.viewportHeight);
+
+			requestAnimFrame(tick);
+			handleKeys();
+			//setupFocalPlane();
+			//debugCamera();
+			//drawScene(shaderProgramFocalDepth);
+			//drawSceneDepth();
+			//drawSceneFocalDepth();
+			
+			drawEffects();
+
+			animate();
+			calculateDeltaTime();
+            debugGaussian();
+			clock();
+
+			//console.log(positionFocalPlane);
+		}
+
+		 function drawBufferABokeh() {
+            gl.useProgram(shaderProgramBufferA); 
+
+            shaderProgramBufferA.vertexPositionAttribute = gl.getAttribLocation(shaderProgramBufferA, "aVertexPosition");
+            gl.enableVertexAttribArray(shaderProgramBufferA.vertexPositionAttribute);
+
+            shaderProgramBufferA.textureCoordAttribute = gl.getAttribLocation(shaderProgramBufferA, "aTextureCoord");
+            gl.enableVertexAttribArray(shaderProgramBufferA.textureCoordAttribute);
+
+            shaderProgramBufferA.samplerUniform = gl.getUniformLocation(shaderProgramBufferA, "uSampler");
+
+            shaderProgramBufferA.samplerFocalDepthUniform = gl.getUniformLocation(shaderProgramBufferA, "uSamplerFocalDepth");
+
+            shaderProgramBufferA.resolutionUniform = gl.getUniformLocation(shaderProgramBufferA, "iResolution");
+
+            shaderProgramBufferA.timeUniform = gl.getUniformLocation(shaderProgramBufferA, "iTime");
+
+            shaderProgramBufferA.bokehStrengthUniform = gl.getUniformLocation(shaderProgramBufferA, "bokehStrength");
+
+            gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+
+            gl.bindBuffer(gl.ARRAY_BUFFER, screenFillingVertexPositionBuffer);
+            gl.vertexAttribPointer(shaderProgramBufferA.vertexPositionAttribute, screenFillingVertexPositionBuffer.itemSize, gl.FLOAT, false, 0, 0);
+
+            gl.bindBuffer(gl.ARRAY_BUFFER, screenFillingTextureCoordBuffer);
+            gl.vertexAttribPointer(shaderProgramBufferA.textureCoordAttribute, screenFillingTextureCoordBuffer.itemSize, gl.FLOAT, false, 0, 0);
+
+            gl.activeTexture(gl.TEXTURE0);
+            gl.bindTexture(gl.TEXTURE_2D, textureFramebufferSetupScene);
+            gl.uniform1i(shaderProgramBufferA.samplerUniform, 0);
+
+            gl.activeTexture(gl.TEXTURE1);
+            gl.bindTexture(gl.TEXTURE_2D, textureFramebufferFocalDepthScene);
+            gl.uniform1i(shaderProgramBufferA.samplerFocalDepthUniform, 1);
+
+            gl.uniform3f(shaderProgramBufferA.resolutionUniform, gl.viewportWidth, gl.viewportHeight, 1.0);
+            gl.uniform1f(shaderProgramBufferA.timeUniform, elapsed);
+
+            gl.uniform1f(shaderProgramBufferA.bokehStrengthUniform, bokehStrength);
+
+            gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, screenFillingIndexBuffer);
+            gl.drawElements(gl.TRIANGLES, screenFillingIndexBuffer.numItems, gl.UNSIGNED_SHORT, 0);
+        }
+
+
+        function drawBufferBBokeh() {
+            gl.useProgram(shaderProgramBufferB); 
+
+            shaderProgramBufferB.vertexPositionAttribute = gl.getAttribLocation(shaderProgramBufferB, "aVertexPosition");
+            gl.enableVertexAttribArray(shaderProgramBufferB.vertexPositionAttribute);
+
+            shaderProgramBufferB.textureCoordAttribute = gl.getAttribLocation(shaderProgramBufferB, "aTextureCoord");
+            gl.enableVertexAttribArray(shaderProgramBufferB.textureCoordAttribute);
+
+            shaderProgramBufferB.samplerUniform = gl.getUniformLocation(shaderProgramBufferB, "uSampler");
+
+            shaderProgramBufferB.samplerFocalDepthUniform = gl.getUniformLocation(shaderProgramBufferB, "uSamplerFocalDepth");
+
+            shaderProgramBufferB.resolutionUniform = gl.getUniformLocation(shaderProgramBufferB, "iResolution");
+
+            shaderProgramBufferB.timeUniform = gl.getUniformLocation(shaderProgramBufferB, "iTime");
+
+            shaderProgramBufferB.bokehStrengthUniform = gl.getUniformLocation(shaderProgramBufferB, "bokehStrength");
+
+            gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+
+            gl.bindBuffer(gl.ARRAY_BUFFER, screenFillingVertexPositionBuffer);
+            gl.vertexAttribPointer(shaderProgramBufferB.vertexPositionAttribute, screenFillingVertexPositionBuffer.itemSize, gl.FLOAT, false, 0, 0);
+
+            gl.bindBuffer(gl.ARRAY_BUFFER, screenFillingTextureCoordBuffer);
+            gl.vertexAttribPointer(shaderProgramBufferB.textureCoordAttribute, screenFillingTextureCoordBuffer.itemSize, gl.FLOAT, false, 0, 0);
+
+            gl.activeTexture(gl.TEXTURE0);
+            gl.bindTexture(gl.TEXTURE_2D, textureFramebufferSetupScene);
+            gl.uniform1i(shaderProgramBufferB.samplerUniform, 0);
+
+            gl.activeTexture(gl.TEXTURE1);
+            gl.bindTexture(gl.TEXTURE_2D, textureFramebufferFocalDepthScene);
+            gl.uniform1i(shaderProgramBufferB.samplerFocalDepthUniform, 1);
+
+            gl.uniform3f(shaderProgramBufferB.resolutionUniform, gl.viewportWidth, gl.viewportHeight, 1.0);
+            gl.uniform1f(shaderProgramBufferB.timeUniform, elapsed);
+
+            gl.uniform1f(shaderProgramBufferB.bokehStrengthUniform, bokehStrength);
+
+            gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, screenFillingIndexBuffer);
+            gl.drawElements(gl.TRIANGLES, screenFillingIndexBuffer.numItems, gl.UNSIGNED_SHORT, 0);
+        }
+
+        function drawBufferCBokeh() {
+            gl.useProgram(shaderProgramBufferC); 
+
+            shaderProgramBufferC.vertexPositionAttribute = gl.getAttribLocation(shaderProgramBufferC, "aVertexPosition");
+            gl.enableVertexAttribArray(shaderProgramBufferC.vertexPositionAttribute);
+
+            shaderProgramBufferC.textureCoordAttribute = gl.getAttribLocation(shaderProgramBufferC, "aTextureCoord");
+            gl.enableVertexAttribArray(shaderProgramBufferC.textureCoordAttribute);
+
+            shaderProgramBufferC.samplerUniform = gl.getUniformLocation(shaderProgramBufferC, "iChannel0");
+
+            shaderProgramBufferC.samplerFocalDepthUniform = gl.getUniformLocation(shaderProgramBufferC, "uSamplerFocalDepth");
+
+            shaderProgramBufferC.resolutionUniform = gl.getUniformLocation(shaderProgramBufferC, "iResolution");
+
+            shaderProgramBufferC.timeUniform = gl.getUniformLocation(shaderProgramBufferC, "iTime");
+
+            shaderProgramBufferC.bokehStrengthUniform = gl.getUniformLocation(shaderProgramBufferC, "bokehStrength");
+
+            gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+
+            gl.bindBuffer(gl.ARRAY_BUFFER, screenFillingVertexPositionBuffer);
+            gl.vertexAttribPointer(shaderProgramBufferC.vertexPositionAttribute, screenFillingVertexPositionBuffer.itemSize, gl.FLOAT, false, 0, 0);
+
+            gl.bindBuffer(gl.ARRAY_BUFFER, screenFillingTextureCoordBuffer);
+            gl.vertexAttribPointer(shaderProgramBufferC.textureCoordAttribute, screenFillingTextureCoordBuffer.itemSize, gl.FLOAT, false, 0, 0);
+
+            gl.activeTexture(gl.TEXTURE0);
+            gl.bindTexture(gl.TEXTURE_2D, textureFramebufferBufferABokeh);
+            gl.uniform1i(shaderProgramBufferC.samplerUniform, 0);
+
+            gl.activeTexture(gl.TEXTURE1);
+            gl.bindTexture(gl.TEXTURE_2D, textureFramebufferFocalDepthScene);
+            gl.uniform1i(shaderProgramBufferC.samplerFocalDepthUniform, 1);
+
+            gl.uniform3f(shaderProgramBufferC.resolutionUniform, gl.viewportWidth, gl.viewportHeight, 1.0);
+            gl.uniform1f(shaderProgramBufferC.timeUniform, elapsed);
+
+            gl.uniform1f(shaderProgramBufferC.bokehStrengthUniform, bokehStrength);
+
+            gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, screenFillingIndexBuffer);
+            gl.drawElements(gl.TRIANGLES, screenFillingIndexBuffer.numItems, gl.UNSIGNED_SHORT, 0);
+        }
+
+        function drawBufferDBokeh() {
+            gl.useProgram(shaderProgramBufferD); 
+
+            shaderProgramBufferD.vertexPositionAttribute = gl.getAttribLocation(shaderProgramBufferD, "aVertexPosition");
+            gl.enableVertexAttribArray(shaderProgramBufferD.vertexPositionAttribute);
+
+            shaderProgramBufferD.textureCoordAttribute = gl.getAttribLocation(shaderProgramBufferD, "aTextureCoord");
+            gl.enableVertexAttribArray(shaderProgramBufferD.textureCoordAttribute);
+
+            shaderProgramBufferD.samplerUniform = gl.getUniformLocation(shaderProgramBufferD, "iChannel0");
+
+            shaderProgramBufferD.samplerFocalDepthUniform = gl.getUniformLocation(shaderProgramBufferD, "uSamplerFocalDepth");
+
+            shaderProgramBufferD.resolutionUniform = gl.getUniformLocation(shaderProgramBufferD, "iResolution");
+
+            shaderProgramBufferD.timeUniform = gl.getUniformLocation(shaderProgramBufferD, "iTime");
+
+            shaderProgramBufferD.bokehStrengthUniform = gl.getUniformLocation(shaderProgramBufferD, "bokehStrength");
+
+            gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+
+            gl.bindBuffer(gl.ARRAY_BUFFER, screenFillingVertexPositionBuffer);
+            gl.vertexAttribPointer(shaderProgramBufferD.vertexPositionAttribute, screenFillingVertexPositionBuffer.itemSize, gl.FLOAT, false, 0, 0);
+
+            gl.bindBuffer(gl.ARRAY_BUFFER, screenFillingTextureCoordBuffer);
+            gl.vertexAttribPointer(shaderProgramBufferD.textureCoordAttribute, screenFillingTextureCoordBuffer.itemSize, gl.FLOAT, false, 0, 0);
+
+            gl.activeTexture(gl.TEXTURE0);
+            gl.bindTexture(gl.TEXTURE_2D, textureFramebufferBufferABokeh);
+            gl.uniform1i(shaderProgramBufferD.samplerUniform, 0);
+
+            gl.activeTexture(gl.TEXTURE1);
+            gl.bindTexture(gl.TEXTURE_2D, textureFramebufferFocalDepthScene);
+            gl.uniform1i(shaderProgramBufferD.samplerFocalDepthUniform, 1);
+
+            gl.uniform3f(shaderProgramBufferD.resolutionUniform, gl.viewportWidth, gl.viewportHeight, 1.0);
+            gl.uniform1f(shaderProgramBufferD.timeUniform, elapsed);
+
+            gl.uniform1f(shaderProgramBufferD.bokehStrengthUniform, bokehStrength);
+
+            gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, screenFillingIndexBuffer);
+            gl.drawElements(gl.TRIANGLES, screenFillingIndexBuffer.numItems, gl.UNSIGNED_SHORT, 0);
+        }
+
+        function setupBokehMode(mode) {
+            gl.useProgram(shaderProgramBufferA);
+            gl.uniform1i(gl.getUniformLocation(shaderProgramBufferA, "uEnableDepthBokeh"), mode);
+            gl.useProgram(shaderProgramBufferB);
+            gl.uniform1i(gl.getUniformLocation(shaderProgramBufferB, "uEnableDepthBokeh"), mode);
+            gl.useProgram(shaderProgramBufferC);
+            gl.uniform1i(gl.getUniformLocation(shaderProgramBufferC, "uEnableDepthBokeh"), mode);
+            gl.useProgram(shaderProgramBufferD);
+            gl.uniform1i(gl.getUniformLocation(shaderProgramBufferD, "uEnableDepthBokeh"), mode);
+            gl.useProgram(shaderProgramBufferImage);
+            gl.uniform1i(gl.getUniformLocation(shaderProgramBufferImage, "uEnableDepthBokeh"), mode);
+        }
+
+		function drawEffects() {
+			gl.bindFramebuffer(gl.FRAMEBUFFER, framebufferSetupScene);
+			gl.viewport(0, 0, gl.viewportWidth, gl.viewportHeight);
+
+			drawScene(shaderProgramLightingPhong);
+
+			gl.bindFramebuffer(gl.FRAMEBUFFER, framebufferFocalDepthScene);
+			gl.viewport(0, 0, gl.viewportWidth, gl.viewportHeight);
+
+			drawScene(shaderProgramFocalDepth);
+
+            var enableDepthBokeh = 0;
+            setupBokehMode(enableDepthBokeh);
+
+			gl.bindFramebuffer(gl.FRAMEBUFFER, framebufferBufferABokeh);
+			gl.viewport(0, 0, gl.viewportWidth, gl.viewportHeight);
+			drawBufferABokeh();
+
+			gl.bindFramebuffer(gl.FRAMEBUFFER, framebufferBufferBBokeh);
+			gl.viewport(0, 0, gl.viewportWidth, gl.viewportHeight);
+			drawBufferBBokeh();
+
+			gl.bindFramebuffer(gl.FRAMEBUFFER, framebufferBufferCBokeh);
+			gl.viewport(0, 0, gl.viewportWidth, gl.viewportHeight);
+			drawBufferCBokeh();
+
+			gl.bindFramebuffer(gl.FRAMEBUFFER, framebufferBufferDBokeh);
+			gl.viewport(0, 0, gl.viewportWidth, gl.viewportHeight);
+			drawBufferDBokeh();
+
+
+
+			gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+			gl.viewport(0, 0, gl.viewportWidth, gl.viewportHeight);
+
+			drawScreenFillingTextureBokeh();
+
+            //gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+
+            gl.viewport(3 * (gl.viewportWidth/4), 3*(gl.viewportHeight/4.0), gl.viewportWidth/4.0, gl.viewportHeight/4.0);
+            //gl.viewport(0, 0, gl.viewportWidth, gl.viewportHeight);            
+            drawScreenTexture(textureFramebufferFocalDepthScene);
+
+
+            gl.viewport(0 * (gl.viewportWidth/4), 3*(gl.viewportHeight/4.0), gl.viewportWidth/4.0, gl.viewportHeight/4.0);
+            drawScreenTexture(textureFramebufferBufferABokeh);
+            gl.viewport(0 * (gl.viewportWidth/4), 2*(gl.viewportHeight/4.0), gl.viewportWidth/4.0, gl.viewportHeight/4.0);
+            drawScreenTexture(textureFramebufferBufferBBokeh);
+            gl.viewport(0 * (gl.viewportWidth/4), 1*(gl.viewportHeight/4.0), gl.viewportWidth/4.0, gl.viewportHeight/4.0);
+            drawScreenTexture(textureFramebufferBufferCBokeh);
+            gl.viewport(0 * (gl.viewportWidth/4), 0*(gl.viewportHeight/4.0), gl.viewportWidth/4.0, gl.viewportHeight/4.0);
+            drawScreenTexture(textureFramebufferBufferDBokeh);
+
+		}
+
+		var currentlyPressedKeys = {};
+
+		function handleKeyDown(event) {
+			//console.log(event.keyCode);
+			currentlyPressedKeys[event.keyCode] = true;
+		}
+
+		function handleKeyUp(event) {
+			currentlyPressedKeys[event.keyCode] = false;
+		}
+
+		//var positionFocalPlane = vec3.fromValues(0.0, 0.0, -450.0);
+		var positionFocalPlane = vec3.fromValues(0.0, 0.0, 0.0);
+
+		function handleKeys() {
+			
+			//positionFocalPlane = 
+
+			// FORWARD
+			if (currentlyPressedKeys[87]) {
+				//console.log("forward");
+				myCamera.ProcessKeyboard(0, deltaTime); // 0 is forward direction
+			}
+			// BACKWARD
+			if (currentlyPressedKeys[83]) {
+				myCamera.ProcessKeyboard(1, deltaTime); // 0 is forward direction
+			}
+			// RIGHT
+			if (currentlyPressedKeys[68]) {
+				myCamera.ProcessKeyboard(3, deltaTime); // 0 is forward direction
+			}
+			// LEFT
+			if (currentlyPressedKeys[65]) {
+				myCamera.ProcessKeyboard(2, deltaTime); // 0 is forward direction
+			}
+			if (currentlyPressedKeys[27]) {
+				enableMouse = !enableMouse;
+			}
+
+			if (currentlyPressedKeys[82]) {
+				//console.log(distanceFocalPlane);
+				distanceFocalPlane += 10;
+				uFocalDistance += 10;
+			}
+			if (currentlyPressedKeys[70]) {
+				//console.log(distanceFocalPlane);
+				distanceFocalPlane -= 10;
+				uFocalDistance -= 10;
+			}
+            if (currentlyPressedKeys[84]) {
+                bokehStrength += 0.01;
+            }
+            if (currentlyPressedKeys[71]) {
+                if (bokehStrength >= 0.01) {
+                    bokehStrength -= 0.01;    
+                } else {
+                    bokehStrength = 0.0;
+                }
+            }
+            console.log("BOKEH STRENGTH: " + bokehStrength);
+		}
+
+		function handleMouseMove(event) {
+			//console.log(event);
+			//console.log(event.screenX);
+			//console.log(event.screenY);
+			if (enableMouse) {
+				var xpos = event.clientX;
+				var ypos = event.clientY;
+
+				if (firstMouse) {
+					lastX = xpos;
+					lastY = ypos;
+					firstMouse = false;
+				}
+
+				var xoffset = xpos - lastX;
+				var yoffset = lastY - ypos;	// Reversed since y-coordinates go from bottom to left
+
+				lastX = xpos;
+				lastY = ypos;
+
+				//console.log(xoffset);
+				//console.log(yoffset);
+
+				myCamera.ProcessMouseMovement(xoffset, yoffset, true);
+			}
+			
+		}
+
+		function createFramebuffers() {
+			framebufferSetupScene = gl.createFramebuffer();
+			gl.bindFramebuffer(gl.FRAMEBUFFER, framebufferSetupScene);
+
+			var texture = createAndSetupTexture();
+			textureFramebufferSetupScene = texture;
+
+			gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.viewportWidth, gl.viewportHeight, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
+
+			var renderbuffer = gl.createRenderbuffer();
+			gl.bindRenderbuffer(gl.RENDERBUFFER, renderbuffer);
+			gl.renderbufferStorage(gl.RENDERBUFFER, gl.DEPTH_COMPONENT16, gl.viewportWidth, gl.viewportHeight);
+
+			
+			gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, texture, 0);
+			gl.framebufferRenderbuffer(gl.FRAMEBUFFER, gl.DEPTH_ATTACHMENT, gl.RENDERBUFFER, renderbuffer);
+
+
+
+			framebufferFocalDepthScene = gl.createFramebuffer();
+			gl.bindFramebuffer(gl.FRAMEBUFFER, framebufferFocalDepthScene);
+
+			var texture2 = createAndSetupTexture();
+			textureFramebufferFocalDepthScene = texture2;
+
+			gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.viewportWidth, gl.viewportHeight, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
+
+			var renderbuffer2 = gl.createRenderbuffer();
+			gl.bindRenderbuffer(gl.RENDERBUFFER, renderbuffer2);
+			gl.renderbufferStorage(gl.RENDERBUFFER, gl.DEPTH_COMPONENT16, gl.viewportWidth, gl.viewportHeight);
+
+			gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, texture2, 0);
+			gl.framebufferRenderbuffer(gl.FRAMEBUFFER, gl.DEPTH_ATTACHMENT, gl.RENDERBUFFER, renderbuffer2);
+
+
+
+			framebufferBufferABokeh = gl.createFramebuffer();
+			gl.bindFramebuffer(gl.FRAMEBUFFER, framebufferBufferABokeh);
+
+			var texture3 = createAndSetupTexture();
+			textureFramebufferBufferABokeh = texture3;
+
+			gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.viewportWidth, gl.viewportHeight, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
+
+			gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, texture3, 0);
+
+
+			//B
+			framebufferBufferBBokeh = gl.createFramebuffer();
+			gl.bindFramebuffer(gl.FRAMEBUFFER, framebufferBufferBBokeh);
+
+			var texture4 = createAndSetupTexture();
+			textureFramebufferBufferBBokeh = texture4;
+
+			gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.viewportWidth, gl.viewportHeight, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
+
+
+			gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, texture4, 0);
+
+
+			// C
+			framebufferBufferCBokeh = gl.createFramebuffer();
+			gl.bindFramebuffer(gl.FRAMEBUFFER, framebufferBufferCBokeh);
+
+			var texture5 = createAndSetupTexture();
+			textureFramebufferBufferCBokeh = texture5;
+
+			gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.viewportWidth, gl.viewportHeight, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
+
+
+			gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, texture5, 0);
+
+
+			// D
+			framebufferBufferDBokeh = gl.createFramebuffer();
+			gl.bindFramebuffer(gl.FRAMEBUFFER, framebufferBufferDBokeh);
+
+			var texture6 = createAndSetupTexture();
+			textureFramebufferBufferDBokeh = texture6;
+
+			gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.viewportWidth, gl.viewportHeight, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
+
+
+			gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, texture6, 0);
+
+
+		}
+
+        function initSphereObject() {
+            sphereGeomParams = uvSphere(0.6,64,32);
+            console.log("SPHERE GEOM COMPUTED");
+        }
+
+
+		function webGLStart() {
+			var canvas = document.getElementById("3D_scene-canvas");
+			initGL(canvas);
+			initShaders();
+			initShadersFocalPlane();
+			initShadersDepth();
+			initShadersFocalDepth();
+			initTextures();
+			initCamera();
+
+
+            initShaderLightingPhong();
+
+            initShadersDebugObjects();
+
+            initShadersRendToText();
+
+
+
+			initShaderBufferA();
+			initshaderBufferB();
+			initshaderBufferC();
+			initshaderBufferD();
+
+			initShaderBufferImage();
+			initScreenFillingBuffers();
+
+			createFramebuffers();
+
+            debugSorting();
+
+			init3DScene();
+			//loadTeapot();
+
+			gl.clearColor(0.0, 0.0, 0.0, 1.0);
+			gl.enable(gl.DEPTH_TEST);
+
+			time_start = new Date().getTime();
+
+			document.onkeydown = handleKeyDown;
+			document.onkeyup = handleKeyUp;
+			document.onmousemove = handleMouseMove;
+
+			tick();
+		}
+
+
+		</script>
+
+	</head>
+
+	<body onload="webGLStart();">
+		<canvas id="3D_scene-canvas" style="border: none;" width="1280" height="720"></canvas>
+	</body>
+</html>

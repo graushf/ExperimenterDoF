@@ -1,0 +1,1967 @@
+<html>
+
+    <head>
+        <title>[GUSTAVO] Learning WebGL - Lesson 1 </title>
+        <meta http-equiv="content-type" content="text/html; charset=ISO-8859-1">
+
+        <script type="text/javascript" src="glMatrix-0.9.5.min.js"></script>
+        <script type="text/javascript" src="webgl-utils.js"></script>
+
+        <!--
+            These shaders are not written in JavaScript, even thought the ancestry
+            of the language is clearly similar. They are written in a special shader
+            language called GLSL, that owes a lot to C (as of course, does JavaScript)
+        -->
+        <!--
+            The fragment shader, does pretty much nothing, it has a bit of obligatory
+            boilerplate code to tell the graphics card how precise we want it to be with
+            floating point numbers (medium precision is good because it's required to be
+            supported by all WebGL devices - highp for high precision doesn't work on all
+            mobile devices) then simply specifies that everything that is drawn will be
+            drawn in white.
+        -->
+        <script id="shader-fs" type="x-shader/x-fragment">
+            precision mediump float;
+
+            varying vec2 vTextureCoord;
+
+            uniform sampler2D uSampler;
+
+            void main(void) {
+                vec2 d = vTextureCoord;
+                vec4 textureColor = texture2D(uSampler, vec2(vTextureCoord.s, vTextureCoord.t));
+                gl_FragColor = vec4(1.0, 1.0, 1.0, 1.0);
+                gl_FragColor = vec4(textureColor.rgb, textureColor.a);
+                gl_FragColor = gl_FragColor.bgra;
+                //gl_FragColor = vec4(vTextureCoord.s, vTextureCoord.t, 1.0, 1.0);
+            }
+        </script>
+
+        <script id="shader-fs-avglr" type="x-shader/x-fragment">
+            precision mediump float;
+
+            // our texture
+            uniform sampler2D uSampler;
+            uniform vec2 u_textureSize;
+
+            // the texCoords passed in from the vertex shader
+            varying vec2 vTextureCoord;
+
+            void main(void) {
+                // compute 1 pixel in texture coordinates.
+                vec2 onePixel = vec2(1.0, 1.0) / u_textureSize;
+
+                // average the left, middle, and right pixels
+                gl_FragColor = (
+                    texture2D(uSampler, vTextureCoord) +
+                    texture2D(uSampler, vTextureCoord + vec2(onePixel.x, 0.0)) +
+                    texture2D(uSampler, vTextureCoord + vec2(-onePixel.x, 0.0))) / 3.0;
+            }
+        </script>
+
+        <script id="shader-fs-kernel" type="x-shader/x-fragment">
+            precision mediump float;
+
+            // our texture
+            uniform sampler2D uSampler;
+            uniform vec2 u_textureSize;
+            uniform float u_kernel[9];
+            uniform float u_kernelWeight;
+
+            uniform float flipY;
+
+            // the texCoords passed in from the vertex shader
+            varying vec2 vTextureCoord;
+
+            vec2 mTextureCoord;
+
+            void main(void) {
+                mTextureCoord = vTextureCoord;
+
+                if (flipY == -1.0) {
+                    mTextureCoord = vec2(vTextureCoord.x, 1.0 - vTextureCoord.y);
+                }
+
+                // compute 1 pixel in texture coordinates.
+                vec2 onePixel = vec2(1.0, 1.0) / u_textureSize;
+
+                vec4 colorSum =
+                    texture2D(uSampler, mTextureCoord + onePixel * vec2(-1, -1)) * u_kernel[0] +
+                    texture2D(uSampler, mTextureCoord + onePixel * vec2(0, -1)) * u_kernel[1] +
+                    texture2D(uSampler, mTextureCoord + onePixel * vec2(1, -1)) * u_kernel[2] +
+                    texture2D(uSampler, mTextureCoord + onePixel * vec2(-1, 0)) * u_kernel[3] +
+                    texture2D(uSampler, mTextureCoord + onePixel * vec2(0, 0)) * u_kernel[4] +
+                    texture2D(uSampler, mTextureCoord + onePixel * vec2(1, 0)) * u_kernel[5] +
+                    texture2D(uSampler, mTextureCoord + onePixel * vec2(-1, 1)) * u_kernel[6] +
+                    texture2D(uSampler, mTextureCoord + onePixel * vec2(0, 1)) * u_kernel[7] +
+                    texture2D(uSampler, mTextureCoord + onePixel * vec2(1, 1)) * u_kernel[8];
+
+                // Divide the sum by the weight but just use rgb
+                // we'll set alpha to 1.0
+                gl_FragColor = vec4((colorSum / u_kernelWeight).rgb, 1.0);
+            }
+        </script>
+
+
+        <script id="shader-fs-setupShapesBokeh" type="x-shader/x-fragment">
+            precision mediump float;
+
+            uniform vec3 iResolution;
+            uniform float iTime;
+
+            uniform sampler2D iChannel0;
+            uniform sampler2D iChannel1;
+            uniform sampler2D iChannel2;
+
+            // the texCoords passed in from the vertex shader
+            varying vec2 vTextureCoord;
+            varying vec3 vFragCoord;
+
+            vec3 FragCoordsToNDC();
+            vec4 drawCircle(vec2 uv, vec2 pos, float rad, vec3 color);
+            vec3 rgb(float r, float g, float b);
+            float drawRectangle(vec2 pos, vec2 size, vec2 uv);
+
+            vec3 srgb2lin(vec3 c) { return c*c; }
+
+            vec3 sampletex(vec2 uv) 
+            {
+                float t = fract( 0.1 * iTime);
+                //float t = 0.80;
+                if (t < 1.0/3.0) 
+                    return  srgb2lin( texture2D(iChannel0, uv, -10.0).rgb  );
+                else if (t < 2.0/3.0)
+                    return srgb2lin( texture2D(iChannel1, uv, -10.0).rgb  );
+                else
+                    return srgb2lin( texture2D(iChannel2, uv, -10.0).rgb  );
+            }
+
+            void main(void) {
+                //vFragCoord += 25.0 * vec2 ( cos(iTime), sin(iTime) );
+                //gl_FragCoord += 25.0 * vec2 ( cos(iTime), sin(iTime) );
+                
+                //gl_FragColor = vec4(sampletex(vec2(vTextureCoord.x,  vTextureCoord.y)), 1.0);
+                //gl_FragColor = vec4(FragCoordsToNDC().xy, 0.0, 1.0);
+                
+                vec2 uv = gl_FragCoord.xy;
+                vec2 center = iResolution.xy * 0.5;
+                float radius = 0.1 * iResolution.y;
+
+                vec2 _uv = FragCoordsToNDC().xy;
+
+                // Circle 
+                vec3 colorCircle = rgb(255.0, 255.0, 255.0);
+
+                vec4 rectangleLayer = drawRectangle(vec2(-0.80, 0.0), vec2(0.12), _uv) * vec4(colorCircle, 1.0);
+                vec4 circleLayer1 = drawCircle(uv, vec2(iResolution.x*0.2, iResolution.t*0.8), 0.04 * iResolution.y, colorCircle);
+                vec4 circleLayer2 = drawCircle(uv, vec2(iResolution.x*0.08, iResolution.t*0.3), 0.03 * iResolution.y, colorCircle);
+                vec4 circleLayer3 = drawCircle(uv, vec2(iResolution.x*0.15, iResolution.t*0.18), 0.03 * iResolution.y, colorCircle);
+                vec4 circleLayer4 = drawCircle(uv, vec2(iResolution.x*0.20, iResolution.t*0.27), 0.03 * iResolution.y, colorCircle);
+
+
+                vec4 lay1 = mix(circleLayer1, circleLayer2, circleLayer2.a);
+                vec4 lay2 = mix(lay1, circleLayer3, circleLayer3.a);
+                vec4 lay3 = mix(lay2, circleLayer4, circleLayer4.a);
+
+                gl_FragColor = vec4(0.0, 1.0, 1.0, 1.0);
+
+                vec4 combinedShapesLayer = mix(rectangleLayer, lay3, lay3.a);
+                gl_FragColor = mix(vec4(0.0, 0.0, 0.0, 1.0), combinedShapesLayer, combinedShapesLayer.a);
+                
+                vec2 posText = vec2(iResolution.x*0.6, iResolution.y*0.5);
+                float width = iResolution.x * 0.5;
+                float height = width;
+
+                if ((gl_FragCoord.x > posText.x - width/2.0) && (gl_FragCoord.x < posText.x + width/2.0)) {
+
+                    //gl_FragColor = vec4(0.0, 1.0, 0.0, 1.0);
+
+                    if ((gl_FragCoord.y > posText.y - height/2.0) && (gl_FragCoord.y < posText.y + height/2.0)) {
+
+                        vec2 _tuv = vec2((gl_FragCoord.x/width) - (iResolution.x/(2.0*width)) + 1.0/2.0, (gl_FragCoord.y/height) - (iResolution.y/(2.0*height)) + 1.0/2.0);
+
+                        gl_FragColor = vec4(sampletex(_tuv), 1.0);
+                        //gl_FragColor = vec4(1.0, 0.0, 1.0, 1.0);
+                    }
+
+                }
+                
+                //gl_FragColor = rectangleLayer;
+            }
+
+            //---------------------------------------------------------
+            // draw rectangle at pos with given size
+            //---------------------------------------------------------
+            float drawRectangle(vec2 pos, vec2 size, vec2 uv)
+            {
+              return (step(pos.x, uv.x)         - step(pos.x + size.x, uv.x))
+                   * (step(pos.y - size.y, uv.y) - step(pos.y, uv.y));
+            }
+
+
+            vec4 drawCircle(vec2 uv, vec2 pos, float rad, vec3 color) {
+                float d = length(pos - uv) - rad;
+                float t = clamp(d, 0.0, 1.0);
+                return vec4(color, 1.0 - t);
+            }
+
+            vec3 rgb(float r, float g, float b) {
+                return vec3(r / 255.0, g / 255.0, b / 255.0);
+            }
+
+            vec3 FragCoordsToNDC() {
+                // Converrt (x, y, z) to [0, 1] range
+                float x = gl_FragCoord.x/iResolution.x;
+                float y = gl_FragCoord.y/iResolution.y;
+                float z = gl_FragCoord.z;   // Already in range [0, 1];
+
+                // Convert the range [0, 1] to NDC [-1,1]
+                float ndcx = x * 2.0 - 1.0;
+                float ndcy = y * 2.0 - 1.0;
+                float ndcz = z * 2.0 - 1.0;
+                vec3 ndc = vec3(ndcx, ndcy, ndcz);
+
+                return ndc;
+            }
+
+
+
+        </script>
+
+        <script id="shader-fs-postprocess" type="x-shader/x-fragment">
+            precision mediump float;
+
+            // our texture
+            uniform sampler2D uSampler;
+
+            varying vec2 vTextureCoord;
+
+            void main(void) {
+                gl_FragColor = vec4(vec3(1.0 - texture2D(uSampler, vTextureCoord)), 1.0);
+                gl_FragColor = texture2D(uSampler, vTextureCoord);
+                //vec4 color = texture2D(uSampler, vTextureCoord);
+                //float average = (color.x + color.y + color.z)/3.0; 
+                //gl_FragColor = vec4(average, average, average, 1.0);
+
+                //gl_FragColor = vec4(0.0, 1.0, 1.0, 1.0);
+            }
+        </script>
+
+
+        <script id="shader-fs-bokeh-BufferA" type="x-shader/x-fragment">
+            precision mediump float;
+
+            //screen filling texture
+            uniform sampler2D uSampler;
+
+            varying vec2 vTextureCoord;
+
+            #define USE_RANDOM
+
+            const vec2 blurdir = vec2(0.0, 1.0);
+            // ===
+            const float blurdist_px = 32.0;
+            const int NUM_SAMPLES = 16;
+
+            const float THRESHOLD = 0.1;
+            const float MULT = 2.0;
+
+            uniform vec3 iResolution; // The viewport resolution (z is pixel aspect ratio, usually 1.0)
+            uniform float iTime; // Current time in seconds
+
+
+            //#define GAMMA_SRGB
+            #if defined( GAMMA_SRGB )
+            // see http://www.opengl.org/registry/specs/ARB/framebuffer_sRGB.txt
+            vec3 srgb2lin( vec3 cs )
+            {
+                vec3 c_lo = cs / 12.92;
+                vec3 c_hi = pow( (cs + 0.055) / 1.055, vec3(2.4) );
+                vec3 s = step(vec3(0.04045), cs);
+                return mix( c_lo, c_hi, s );
+            }
+
+            vec3 lin2srgb( vec3 cl )
+            {
+                // cl = clamp( cl, 0.0, 1.0 );
+                vec3 c_lo = 12.92 * cl;
+                vec3 c_hi = 1.055 * pow(cl, vec3(0.41666)) - 0.055;
+                vec3 s = step( vec3(0.0031308), cl );
+                return mix( c_lo, c_hi, s );
+            }
+            #else 
+            vec3 srgb2lin(vec3 c) { return c*c; }
+            vec3 lin2srgb(vec3 c) { return sqrt(c); }
+            #endif // GAMMA_SRGB
+
+            // note: uniform pdf ranf [0;1[
+            float hash12n(vec2 p) 
+            {
+                p = fract(p * vec2(5.3987, 5.4421));
+                p += dot(p.yx, p.xy + vec2(21.5351, 14.3137));
+                return fract(p.x * p.y * 95.4307);
+            }
+
+            vec4 pattern( vec2 p )
+            {
+                float aspect = iResolution.x/iResolution.y;
+                float p0 = step(abs(p.x - 0.125), 0.01) * step(abs(p.y - 0.27), 0.01);
+                float p1 = step( length( p - vec2(0.125, 0.45) ), 0.025 );
+
+                float p2_0 = step( length(p - vec2(0.08, 0.14) ), 0.0125 );
+                float p2_1 = step( length(p - vec2(0.16, 0.125) ), 0.0125);
+                float p2_2 = step( length(p - vec2(0.1, 0.07) ), 0.0125 );
+                float p2 = max(p2_0, max(p2_1, p2_2));
+
+                return vec4( max(p0, max(p1, p2) ) );
+            }
+
+            vec3 sampletex( vec2 uv ) 
+            {
+                return srgb2lin( texture2D(uSampler, uv, -10.0).rgb );
+            }
+
+            void main(void) {
+                //vec2 _uv = gl_FragCoord.xy / iResolution.xy;
+                //gl_FragColor = vec4(sampletex(_uv), 1.0); return;
+
+                vec2 blurvec = normalize(blurdir) / iResolution.xx;
+                vec2 suv = gl_FragCoord.xy  / iResolution.xy;
+                vec2 uv = gl_FragCoord.xy / iResolution.xx;
+
+                float sinblur = (0.55 + 0.45 * sin(5.0 * uv.x + iTime ) );
+                float blurdist = blurdist_px * sinblur;
+
+                vec2 p0 = uv;
+                vec2 p1 = uv + blurdist * blurvec;
+                vec2 stepvec = (p1-p0) / float(NUM_SAMPLES);
+                vec2 p = p0;
+
+                #if defined(USE_RANDOM)
+                p +=  (hash12n(uv + fract(iTime)+0.1)) * stepvec;
+                #endif
+
+                vec3 sumcol = vec3(0.0);
+                for (int i=0; i < NUM_SAMPLES; ++i)
+                {
+                    if (p.x < 0.25)
+                        sumcol += pattern( p ).rgb;
+                    else 
+                    {
+                        vec3 smpl = (sampletex(p) - THRESHOLD ) / (1.0 - THRESHOLD);
+                        // sumcol += sample;
+                        sumcol += smpl*smpl;
+                    }
+
+                    p += stepvec;
+                }
+                sumcol /= float(NUM_SAMPLES);
+                sumcol = max(sumcol, 0.0);
+
+                gl_FragColor = vec4( lin2srgb(sumcol * MULT), 1.0);
+            }
+        </script>
+
+        <script id="shader-fs-bokeh-BufferB" type="x-shader/x-fragment">
+            precision mediump float;
+
+            // screen filling texture
+            uniform sampler2D uSampler;
+
+            varying vec2 vTextureCoord;
+
+            #define USE_RANDOM
+
+            const vec2 blurdir = vec2( 1.0, -0.577350269189626 );
+
+            // ===
+
+            const float blurdist_px = 32.0;
+            const int NUM_SAMPLES = 16;
+
+            const float THRESHOLD = 0.1;
+            const float MULT = 2.0;
+
+            uniform vec3 iResolution; // The viewport resolution (z is pixel aspect ratio, usually 1.0)
+            uniform float iTime;    // Current time in seconds
+
+            //#define GAMMA_SRGB
+            #if defined( GAMMA_SRGB )
+            vec3 srgb2lin( vec3 cs )
+            {
+                vec3 c_lo = cs / 12.92;
+                vec3 c_hi = pow( (cs + 0.055) / 1.055, vec3(2.4) );
+                vec3 s = step(vec3(0.04045), cs);
+                return mix( c_lo, c_hi, s );
+            }
+            vec3 lin2srgb( vec3 cl )
+            {
+                //cl = clamp(cl, 0.0, 1.0);
+                vec3 c_lo = 12.92 * cl;
+                vec3 c_hi = 1.055 * pow(cl, vec3(0.41666)) - 0.055;
+                vec3 s = step( vec3(0.0031308), cl);
+                return mix( c_lo, c_hi, s);
+            }
+            #else
+            vec3 srgb2lin(vec3 c) { return c*c; }
+            vec3 lin2srgb(vec3 c) { return sqrt(c); }
+            #endif //GAMMA_SRGB
+
+            //note uniform pdf rand [0;1[
+            float hash12n(vec2 p)
+            {
+                p = fract(p * vec2(5.3987, 5.4421));
+                p += dot(p.yx, p.xy + vec2(21.5351, 14.3137));
+                return fract(p.x * p.y * 95.4307);
+            }
+
+            vec4 pattern( vec2 p )
+            {
+                float aspect = iResolution.x/iResolution.y;
+                float p0 = step(abs(p.x - 0.125), 0.01) * step(abs(p.y - 0.27), 0.01);
+                float p1 = step( length( p - vec2(0.125, 0.45) ), 0.025 );
+
+                float p2_0 = step( length( p - vec2(0.08, 0.14) ), 0.0125);
+                float p2_1 = step( length( p-vec2(0.16, 0.125) ), 0.0125);
+                float p2_2 = step( length( p-vec2(0.1, 0.07) ), 0.0125);
+                float p2 = max(p2_0, max(p2_1, p2_2));
+
+                return vec4( max( p0, max(p1, p2) ) );
+            }
+
+            vec3 sampletex( vec2 uv )
+            {
+                return srgb2lin( texture2D(uSampler, uv, -10.0).rgb );
+            }
+
+            void main(void) {
+                vec2 blurvec = normalize(blurdir) / iResolution.xx;
+                vec2 suv = gl_FragCoord.xy / iResolution.xy;
+                vec2 uv = gl_FragCoord.xy / iResolution.xx;
+
+                float sinblur = ( 0.55 + 0.45 * sin( 5.0 * uv.x + iTime ) );
+                float blurdist = blurdist_px * sinblur;
+
+
+                vec2 p0 = uv;
+                vec2 p1 = uv + blurdist * blurvec;
+                vec2 stepvec = (p1-p0) / float(NUM_SAMPLES);
+                vec2 p = p0;
+                #if defined(USE_RANDOM)
+                p += (hash12n(uv+fract(iTime)+0.2)) * stepvec;
+                #endif
+
+                vec3 sumcol = vec3(0.0);
+                for (int i=0; i<NUM_SAMPLES;++i)
+                {
+                    if (p.x < 0.25)
+                    {
+                        sumcol += pattern( p ).rgb;
+                    }else {
+                        vec3 smpl = (sampletex(p) - THRESHOLD ) / (1.0 - THRESHOLD);
+                        //sumcol += sample;
+                        sumcol += smpl*smpl;
+                    }
+
+                    p += stepvec;
+                }
+                sumcol /= float(NUM_SAMPLES);
+                sumcol = max( sumcol, 0.0 );
+
+                gl_FragColor = vec4( lin2srgb( sumcol * MULT ), 1.0 );
+            }
+        </script>
+
+        <script id="shader-fs-bokeh-BufferC" type="x-shader/x-fragment">
+            precision mediump float;
+
+            uniform sampler2D iChannel0;
+
+            varying vec2 vTextureCoord;
+
+            #define USE_RANDOM
+
+            const vec2 blurdir = vec2( -1.0, -0.577350269189626 );
+
+            // ===
+            const float blurdist_px = 32.0;
+            const int NUM_SAMPLES = 16;
+
+            uniform vec3 iResolution;
+            uniform float iTime;
+
+            //#define GAMMA_SRGB
+            #if defined ( GAMMA_SRGB )
+
+            vec3 srgb2lin( vec3 cs )
+            {
+                vec3 c_lo = cs / 12.92;
+                vec3 c_hi = pow( (cs + 0.055) / 1.055, vec3(2.4) );
+                vec3 s = step(vec3(0.04045), cs);
+                return mix( c_lo, c_hi, s);
+            }
+
+            vec3 lin2srgb( vec3 cl )
+            {
+                //cl = clamp( cl, 0.0, 1.0 );
+                vec3 c_lo = 12.92 * cl;
+                vec3 c_hi = 1.055 * pow(cl, vec3(0.41666)) - 0.055;
+                vec3 s = step(vec3(0.0031308), cl);
+                return mix( c_lo, c_hi, s);
+            }
+            #else
+            vec3 srgb2lin(vec3 c) { return c*c; }
+            vec3 lin2srgb(vec3 c) { return sqrt(c); }
+            #endif //GAMMA_SRGB
+
+            //note: uniform pdf rand [0;1[
+            float hash12n(vec2 p)
+            {
+                p = fract(p * vec2(5.3987, 5.4421));
+                p += dot(p.yx, p.xy + vec2(21.5351, 14.3137));
+                return fract(p.x * p.y * 95.4307);
+            }
+
+            void main()
+            {
+                vec2 blurvec = normalize(blurdir) / iResolution.xy;
+                vec2 uv = gl_FragCoord.xy / iResolution.xy;
+                vec2 suv = (gl_FragCoord.xy + 25.0 * vec2( cos(iTime), sin(iTime) )) /iResolution.xy;
+                float sinblur = (0.55 + 0.45 * sin( 5.0 * uv.x + iTime ) );
+                float blurdist = blurdist_px * sinblur;
+
+                vec2 p0 = uv;
+                vec2 p1 = uv + blurdist * blurvec;
+                vec2 stepvec = (p1-p0) / float(NUM_SAMPLES);
+                vec2 p = p0;
+                #if defined(USE_RANDOM)
+                p += (hash12n(uv+fract(iTime)+0.3)) * stepvec;
+                #endif
+
+                vec3 sumcol = vec3(0.0);
+                for (int i =0; i<NUM_SAMPLES;++i)
+                {
+                    sumcol += srgb2lin( texture2D(iChannel0, p, -10.0 ).rgb);
+                    p += stepvec;
+                }
+                sumcol /= float(NUM_SAMPLES);
+
+                gl_FragColor = vec4( lin2srgb(sumcol), 1.0 );
+
+            }
+
+        </script>
+
+        <script id="shader-fs-bokeh-BufferD" type="x-shader/x-fragment">
+            precision mediump float;
+
+            uniform sampler2D iChannel0;
+
+            varying vec2 vTextureCoord;
+
+            #define USE_RANDOM
+
+            const vec2 blurdir = vec2(1.0, -0.577350269189626 );
+            // ====
+
+            const float blurdist_px = 32.0;
+            const int NUM_SAMPLES = 16;
+
+            uniform vec3 iResolution;
+            uniform float iTime;
+
+            //#define GAMMA_SRGB
+            #if defined (GAMMA_SRGB)
+            vec3 srgb2lin( vec3 cs )
+            {
+                vec3 c_lo = cs / 12.92;
+                vec3 c_hi = pow( (cs + 0.055) / 1.055, vec3(2.4));
+                vec3 s = step(vec3(0.04045), cs);
+                return mix( c_lo, c_hi, s);
+            }
+            vec3 lin2srgb( vec3 cl )
+            {
+                //cl = clamp( cl, 0.0, 1.0);
+                vec3 c_lo = 12.92 * cl;
+                vec3 c_hi = 1.055 * pow(cl, vec3(0.41666)) - 0.055;
+                vec3 s = step( vec3(0.0031308), cl);
+                return mix( c_lo, c_hi, s);
+            }
+            #else 
+            vec3 srgb2lin(vec3 c) { return c*c; }
+            vec3 lin2srgb(vec3 c) { return sqrt(c); }
+            #endif //GAMMA_RGB
+
+            //note:uniform pdf rand [0:1[
+            float hash12n(vec2 p)
+            {
+                p = fract(p * vec2(5.3987, 5.4421));
+                p += dot(p.yx, p.xy + vec2(21.5351, 14.3137));
+                return fract(p.x * p.y * 95.4307);
+            }
+
+            void main()
+            {
+                vec2 blurvec = normalize(blurdir) / iResolution.xy;
+                vec2 uv = gl_FragCoord.xy / iResolution.xy;
+                vec2 suv = (gl_FragCoord.xy + 25.0 * vec2( cos(iTime), sin(iTime) )) / iResolution.xy;
+                float sinblur = ( 0.55 + 0.45 * sin( 5.0 * uv.x + iTime ) );
+                float blurdist = blurdist_px * sinblur;
+
+                vec2 p0 = uv;
+                vec2 p1 = uv + blurdist * blurvec;
+                vec2 stepvec = (p1-p0) / float(NUM_SAMPLES);
+                vec2 p = p0;
+                #if defined (USE_RANDOM)
+                p += (hash12n(uv+fract(iTime)+0.4)) * stepvec;
+                #endif
+
+                vec3 sumcol = vec3(0.0);
+                for (int i=0; i<NUM_SAMPLES;++i)
+                {
+                    sumcol += srgb2lin( texture2D(iChannel0, p, -10.0 ).rgb);
+                    p += stepvec;
+                }
+                sumcol /= float(NUM_SAMPLES);
+
+                gl_FragColor = vec4( lin2srgb(sumcol), 1.0);
+            }
+        </script>
+
+
+        <script id="shader-fs-bokeh-Image" type="x-shader/x-fragment">
+            precision mediump float;
+
+            //screen filling texture
+            uniform sampler2D iChannel0;
+            uniform sampler2D iChannel1;
+            uniform sampler2D iChannel2;
+            uniform sampler2D iChannel3;
+
+            varying vec2 vTextureCoord;
+
+            uniform vec3 iResolution; // The viewport resolution (z is pixel aspect ratio, usually 1.0)
+            uniform float iTime; // Current time in seconds
+
+            #define USE_RANDOM
+
+            const vec2 blurdir = vec2( -1.0, -0.577350269189626);
+            // ===
+            const float blurdist_px = 32.0;
+            const int NUM_SAMPLES = 16;
+
+            //#define GAMMA_SRGB
+            #if defined (GAMMA_SRGB )
+
+            vec3 srgb2lin( vec cs )
+            {
+                vec3 c_lo = cs  12.92;
+                vec3 c_hi = pow( (cs + 0.055) / 1.055, vec3(2.4) );
+                vec3 s = step(vec3(0.04045), cs);
+                return mix( c_lo, c_hi, s );
+            }
+
+            vec3 lin2srgb( vec3 cl )
+            {
+                // cl = clamp(cl, 0.0, 1.0);
+                vec3 c_lo = 12.92 * cl;
+                vec3 c_hi = 1.055 * pow(cl, vec3(0.4166)) - 0.055;
+                vec3 s = step( vec3(0.0031308), cl);
+                return mix( c_lo, c_hi, s );
+            }
+            #else
+            vec3 srgb2lin(vec3 c) { return c*c; }
+            vec3 lin2srgb(vec3 c) { return sqrt(c); }
+            #endif //GAMMA_SRGB
+
+            //note:: uniform pdf rand [0:1[
+            float hash12n(vec2 p)
+            {
+                p = fract(p * vec2(5.3987, 5.4421));
+                p += dot(p.yx, p.xy + vec2(21.5351, 14.3137));
+                return fract(p.x * p.y * 95.4307);
+            }
+
+            void main(void) {
+                //gl_FragColor = vec4(1.0 - texture2D(iChannel0, vTextureCoord).xyz, 1.0); return;
+
+                vec2 blurvec = normalize(blurdir) / iResolution.xy;
+
+                vec2 uv = gl_FragCoord.xy / iResolution.xy;
+                vec2 suv = gl_FragCoord.xy/iResolution.xy;
+                float sinblur = ( 0.55 + 0.45 * sin( 5.0 * uv.x + iTime ) );
+                float blurdist = blurdist_px * sinblur;
+
+                vec2 p0 = uv;
+                vec2 p1 = uv + blurdist * blurvec;
+                vec2 stepvec = (p1 - p0) / float(NUM_SAMPLES);
+                vec2 p = p0;
+                #if defined(USE_RANDOM)
+                p += (hash12n(uv+fract(iTime)+0.5)) * stepvec;
+                #endif
+
+                vec3 sumcol = vec3(0.0);
+                for (int i=0; i<NUM_SAMPLES;++i)
+                {
+                    sumcol += srgb2lin( texture2D( iChannel1, p, -10.0 ).rgb);
+                    p += stepvec;
+                }
+                sumcol /= float(NUM_SAMPLES);
+
+                vec3 s2 = srgb2lin( texture2D(iChannel2, uv).rgb );
+                vec3 s3 = srgb2lin( texture2D( iChannel3, uv).rgb );
+
+                // DEBUG
+                //gl_FragColor = texture2D( iChannel0, uv); return; // DBG BufferA
+                //gl_FragColor = texture2D( iChannel1, uv); return; // DBG BufferB
+                //gl_FragColor = texture2D( iChannel2, uv); return; // DBG BufferC
+                //gl_FragColor = texture2D( iChannel3, uv); return; // DBG BufferD
+
+
+                //gl_FragColor = texture2D( iChannel1, uv); return; // DBG
+                //gl_FragColor = texture2D( iChannel2, uv); return; // DBG
+                //gl_FragColor = texture2D( iChannel3, uv); return; // DBG
+
+                //gl_FragColor = vec4(sumcol,1.0); return; //DBG
+                //gl_FragColor = texture2D( iChannel2, uv); return; // DBG
+                //gl_FragColor = vec4(lin2srgb(s2), 1.0); return; //DBG
+                //gl_FragColor = vec4(lin2srgb(s3), 1.0); return; //DBG
+
+                vec3 outcol = sumcol + s2 + s3;
+                gl_FragColor = vec4( lin2srgb(outcol), 1.0 );
+
+                //gl_FragColor = vec4(0.0, 1.0, 1.0, 1.0);
+            }
+
+        </script>
+
+
+
+
+        <!--
+            The vertex shader is more interesting. MEans that it's a bit of graphics
+            card code that can do pretty much anything it wants with a vertex.
+            Associated with it has two uniform variables called uMVMatrix and uPMatrix.
+            Uniform variables are useful because they can be accessed from outside the
+            shader
+        -->
+        <script id="shader-vs" type="x-shader/x-vertex">
+            attribute vec3 aVertexPosition;
+            attribute vec2 aTextureCoord;
+
+            uniform mat4 uMVMatrix;
+            uniform mat4 uPMatrix;
+
+            varying vec2 vTextureCoord;
+
+            varying vec3 vFragCoord;
+
+            void main(void) {
+                vTextureCoord = aTextureCoord;
+                //gl_Position = uPMatrix * uMVMatrix * vec4(aVertexPosition, 1.0);
+                gl_Position = vec4(aVertexPosition, 1.0);
+
+                vFragCoord = aVertexPosition;
+            }
+        </script>
+
+        <script id="shader-vs-postprocess" type="x-shader/x-vertex">
+            attribute vec3 aVertexPosition;
+            attribute vec2 aTextureCoord;
+
+            varying vec2 vTextureCoord;
+
+            void main(void) {
+                vTextureCoord = aTextureCoord;
+                gl_Position = vec4(aVertexPosition, 1.0);
+            }
+
+        </script>
+
+
+
+
+        <script type="text/javascript">
+
+            var gl;
+
+            // Define several convolution kernels
+            var kernels = {
+                normal: [
+                  0, 0, 0,
+                  0, 1, 0,
+                  0, 0, 0
+                ],
+                gaussianBlur: [
+                  0.045, 0.122, 0.045,
+                  0.122, 0.332, 0.122,
+                  0.045, 0.122, 0.045
+                ],
+                gaussianBlur2: [
+                  1, 2, 1,
+                  2, 4, 2,
+                  1, 2, 1
+                ],
+                gaussianBlur3: [
+                  0, 1, 0,
+                  1, 1, 1,
+                  0, 1, 0
+                ],
+                unsharpen: [
+                  -1, -1, -1,
+                  -1,  9, -1,
+                  -1, -1, -1
+                ],
+                sharpness: [
+                   0,-1, 0,
+                  -1, 5,-1,
+                   0,-1, 0
+                ],
+                sharpen: [
+                   -1, -1, -1,
+                   -1, 16, -1,
+                   -1, -1, -1
+                ],
+                edgeDetect: [
+                   -0.125, -0.125, -0.125,
+                   -0.125,  1,     -0.125,
+                   -0.125, -0.125, -0.125
+                ],
+                edgeDetect2: [
+                   -1, -1, -1,
+                   -1,  8, -1,
+                   -1, -1, -1
+                ],
+                edgeDetect3: [
+                   -5, 0, 0,
+                    0, 0, 0,
+                    0, 0, 5
+                ],
+                edgeDetect4: [
+                   -1, -1, -1,
+                    0,  0,  0,
+                    1,  1,  1
+                ],
+                edgeDetect5: [
+                   -1, -1, -1,
+                    2,  2,  2,
+                   -1, -1, -1
+                ],
+                edgeDetect6: [
+                   -5, -5, -5,
+                   -5, 39, -5,
+                   -5, -5, -5
+                ],
+                sobelHorizontal: [
+                    1,  2,  1,
+                    0,  0,  0,
+                   -1, -2, -1
+                ],
+                sobelVertical: [
+                    1,  0, -1,
+                    2,  0, -2,
+                    1,  0, -1
+                ],
+                previtHorizontal: [
+                    1,  1,  1,
+                    0,  0,  0,
+                   -1, -1, -1
+                ],
+                previtVertical: [
+                    1,  0, -1,
+                    1,  0, -1,
+                    1,  0, -1
+                ],
+                boxBlur: [
+                    0.111, 0.111, 0.111,
+                    0.111, 0.111, 0.111,
+                    0.111, 0.111, 0.111
+                ],
+                triangleBlur: [
+                    0.0625, 0.125, 0.0625,
+                    0.125,  0.25,  0.125,
+                    0.0625, 0.125, 0.0625
+                ],
+                emboss: [
+                   -2, -1,  0,
+                   -1,  1,  1,
+                    0,  1,  2
+                ]
+            };
+
+            // List of effects to apply.
+            var effectsToApply = [
+                //"edgeDetect2",
+                //"boxBlur"
+                "normal",
+                //"gaussianBlur",
+                //"gaussianBlur",
+                //"gaussianBlur",
+                //"edgeDetect2"
+                //"gaussianBlur",
+                //"unsharpen"
+            ];
+
+            function initGL(canvas) {
+                try {
+                    gl = canvas.getContext("experimental-webgl");
+                    gl.viewportWidth = canvas.width;
+                    gl.viewportHeight = canvas.height;
+                } catch (e)
+                {
+                }
+                if (!gl)
+                {
+                    alert("Could not initialise WebGL, sorry :-(");
+                }
+            }
+
+
+            function getShader(gl, id)
+            {
+                var shaderScript = document.getElementById(id);
+                if (!shaderScript)
+                {
+                    return null;
+                }
+
+                var str = "";
+                var k = shaderScript.firstChild;
+                while (k)
+                {
+                    if (k.nodeType == 3)
+                    {
+                        str += k.textContent;
+                    }
+                    k = k.nextSibling;
+                }
+
+                var shader;
+                if (shaderScript.type == "x-shader/x-fragment")
+                {
+                    shader = gl.createShader(gl.FRAGMENT_SHADER);
+                } else if (shaderScript.type == "x-shader/x-vertex")
+                {
+                    shader = gl.createShader(gl.VERTEX_SHADER);
+                } else
+                {
+                    return null;
+                }
+
+                gl.shaderSource(shader, str);
+                gl.compileShader(shader);
+
+                if (!gl.getShaderParameter(shader, gl.COMPILE_STATUS))
+                {
+                    alert(gl.getShaderInfoLog(shader));
+                    return null;
+                }
+
+                return shader;
+            }
+
+
+
+            var shaderProgram;
+
+            function initShaders()
+            {
+                /*
+                    Gets two things, a "fragment shader" and a "vertex shader"
+                    and then attacjes them both to a WebGL things called a "program".
+                    A program is a bit of code that lives on the WebGL side of the
+                    system; You can associate with it a number of shaders, each of which
+                    you can see as a snippet of code within that program; specifically
+                    each program can hold one fragment and one vertex shader.
+                */
+                var fragmentShader = getShader(gl, "shader-fs-setupShapesBokeh");
+                var vertexShader = getShader(gl, "shader-vs");
+
+                shaderProgram = gl.createProgram();
+                gl.attachShader(shaderProgram, vertexShader);
+                gl.attachShader(shaderProgram, fragmentShader);
+                gl.linkProgram(shaderProgram);
+
+                if (!gl.getProgramParameter(shaderProgram, gl.LINK_STATUS)) {
+                    alert("Could not initialise shaders");
+                }
+
+            }
+            
+            var shaderProgramBufferA;
+            function initShaderBufferA() 
+            {
+                var fragmentShader = getShader(gl, "shader-fs-bokeh-BufferA");
+                var vertexShader = getShader(gl, "shader-vs-postprocess");
+
+                shaderProgramBufferA = gl.createProgram();
+                gl.attachShader(shaderProgramBufferA, vertexShader);
+                gl.attachShader(shaderProgramBufferA, fragmentShader);
+                gl.linkProgram(shaderProgramBufferA);
+
+                if (!gl.getProgramParameter(shaderProgramBufferA, gl.LINK_STATUS)) {
+                    alert("Could not initialise shaders");
+                }
+            }
+
+            var shaderProgramBufferB;
+            function initshaderBufferB() 
+            {
+                var fragmentShader = getShader(gl, "shader-fs-bokeh-BufferB");
+                var vertexShader = getShader(gl, "shader-vs-postprocess");
+
+                shaderProgramBufferB = gl.createProgram();
+                gl.attachShader(shaderProgramBufferB, vertexShader);
+                gl.attachShader(shaderProgramBufferB, fragmentShader);
+                gl.linkProgram(shaderProgramBufferB);
+
+                if(!gl.getProgramParameter(shaderProgramBufferB, gl.LINK_STATUS)) {
+                    alert("Could not initialise shaders");
+                }
+            }
+
+            var shaderProgramBufferC;
+            function initshaderBufferC() 
+            {
+                var fragmentShader = getShader(gl, "shader-fs-bokeh-BufferC");
+                var vertexShader = getShader(gl, "shader-vs-postprocess");
+
+                shaderProgramBufferC = gl.createProgram();
+                gl.attachShader(shaderProgramBufferC, vertexShader);
+                gl.attachShader(shaderProgramBufferC, fragmentShader);
+                gl.linkProgram(shaderProgramBufferC);
+
+                if(!gl.getProgramParameter(shaderProgramBufferC, gl.LINK_STATUS)) {
+                    alert("Could not initialise shaders");
+                }
+            }
+
+            var shaderProgramBufferD;
+            function initshaderBufferD() 
+            {
+                var fragmentShader = getShader(gl, "shader-fs-bokeh-BufferD");
+                var vertexShader = getShader(gl, "shader-vs-postprocess");
+
+                shaderProgramBufferD = gl.createProgram();
+                gl.attachShader(shaderProgramBufferD, vertexShader);
+                gl.attachShader(shaderProgramBufferD, fragmentShader);
+                gl.linkProgram(shaderProgramBufferD);
+
+                if(!gl.getProgramParameter(shaderProgramBufferD, gl.LINK_STATUS)) {
+                    alert("Could not initialise shaders");
+                }
+            }
+
+
+            var shaderProgramBufferImage;
+            function initShaderBufferImage() 
+            {
+                var fragmentShader = getShader(gl, "shader-fs-bokeh-Image");
+                var vertexShader = getShader(gl, "shader-vs-postprocess");
+
+                shaderProgramBufferImage = gl.createProgram();
+                gl.attachShader(shaderProgramBufferImage, vertexShader);
+                gl.attachShader(shaderProgramBufferImage, fragmentShader);
+                gl.linkProgram(shaderProgramBufferImage);
+
+                if (!gl.getProgramParameter(shaderProgramBufferImage, gl.LINK_STATUS)) {
+                    alert("Could not initialise shaders");
+                }
+            }
+
+
+
+            function isPowerOf2(value) {
+                return (value & (value - 1)) == 0;
+            }
+
+            function loadTexture(url) {
+                const texture = gl.createTexture();
+                gl.bindTexture(gl.TEXTURE_2D, texture);
+
+                // Because images have to be downloaded over the internet
+                // they might take a moment until they are ready.
+                // Until then put a single pixel in the texture so we can 
+                // use it immediately. When the image has finished downloading
+                // we'll update the texture with the contents of the image.
+                const level = 0;
+                const internalFormal = gl.RGBA;
+                const width = 1;
+                const height = 1;
+                const border = 0;
+                const srcFormat = gl.RGBA;
+                const srcType = gl.UNSIGNED_BYTE;
+                const pixel = new Uint8Array([0, 0, 255, 255]); // opaque blue
+                gl.texImage2D(gl.TEXTURE_2D, level, internalFormal, width, height, border, srcFormat, srcType, pixel);
+
+                const image = new Image();
+                image.onload = function() {
+                    gl.bindTexture(gl.TEXTURE_2D, texture);
+                    gl.texImage2D(gl.TEXTURE_2D, level, internalFormal, srcFormat, srcType, image);
+
+                    // WebGL1 has different requirements for power of 2 images
+                    // vs non power of 2 images so check if the image is a 
+                    // power of 2 in both dimensions
+                    if (isPowerOf2(image.width) && isPowerOf2(image.height)) {
+                        // Yes, it's a power of 2. Generate mips.
+                        gl.generateMipmap(gl.TEXTURE_2D);
+                    } else {
+                        // No, it's not a power of 2. Turn of mips and set
+                        // wrapping to clamp to edge
+                        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+                        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+                        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+                    }
+                };
+                image.src = url;
+
+                return texture;
+            }
+
+
+            var ready = false;
+
+            function handleLoadedTexture(texture)
+            {
+                gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true);
+
+                gl.bindTexture(gl.TEXTURE_2D, texture);
+                gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, texture.image);
+                gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+                gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+
+                gl.bindTexture(gl.TEXTURE_2D, null);
+
+                ready = !ready;
+
+            }
+
+            function createAndSetupTexture() 
+            {
+                var texture = gl.createTexture();
+                gl.bindTexture(gl.TEXTURE_2D, texture);
+
+                // Set up texture so we can render any size image and so we are working with pixels.
+                gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+                gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+                gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
+                gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+
+                ready = !ready;
+
+                return texture;                
+            }
+
+            var textureSrc;
+            var originalImageTexture;
+
+            function initTexture()
+            {
+                textureSrc = gl.createTexture();
+                textureSrc.image = new Image();
+                textureSrc.image.src = "http://localhost/POC_DoF/nature.jpg"
+                textureSrc.image.onload = function() {
+                    //handleLoadedTexture(textureSrc);
+                    originalImageTexture = createAndSetupTexture();
+                    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, textureSrc.image);
+                }
+            }
+
+            var channel0Tex = -1;
+            var channel1Tex = -1;
+            var channel2Tex = -1;
+
+            var readyChannel0 = false;
+            var readyChannel1 = false;
+            var readyChannel2 = false;
+
+            function handleTexturePatt(texture, i) {
+                gl.bindTexture(gl.TEXTURE_2D, texture);
+                gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, texture.image);
+                gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+                gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+                gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
+                gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+
+                gl.bindTexture(gl.TEXTURE_2D, null);
+
+                if (i == 0) {
+                    readyChannel0 = !readyChannel0;    
+                } else if (i == 1) {
+                    readyChannel1 = !readyChannel1;    
+                } else {
+                    readyChannel2 = !readyChannel2;    
+                }
+                
+            } 
+
+
+            function initTexturePatterns() 
+            {
+                channel0Tex = loadTexture("http://localhost/POC_DoF/Stars_512.jpg");
+
+                channel1Tex = loadTexture("http://localhost/POC_DoF/Lichen_1024.jpg");
+
+                channel2Tex = loadTexture("http://localhost/POC_DoF/Organic_2_1024.jpg");
+
+                    readyChannel0 = !readyChannel0;    
+                    readyChannel1 = !readyChannel1;    
+                    readyChannel2 = !readyChannel2;    
+
+
+                /*channel0Tex = gl.createTexture();
+                channel0Tex.image = new Image();
+                channel0Tex.image.src = "http://localhost/POC_DoF/Stars_512.jpg"
+                channel0Tex.image.onload = function() {
+                    handleTexturePatt(channel0Tex, 0);    
+                }
+
+                
+                channel1Tex = gl.createTexture();
+                channel1Tex.image = new Image();
+                channel1Tex.image.src = "http://localhost/POC_DoF/Lichen_1024.jpg"
+                channel0Tex.image.onload = function() {
+                    handleTexturePatt(channel1Tex, 1);
+                }*/
+                
+
+                
+
+                // channel2Tex = gl.createTexture();
+                // channel2Tex.image = new Image();
+                // channel2Tex.image.src = "http://localhost/POC_DoF/Organic_2_1024.jpg"
+                // channel0Tex.image.onload = function() {
+                //     handleTexturePatt(channel2Tex, 2);
+                // }
+            }
+
+
+
+            function computeKernelWeight(kernel) {
+                var weight = kernel.reduce(function(prev, curr) {
+                    return prev + curr;
+                });
+                return weight <= 0 ? 1 : weight;
+            }
+
+            var mvMatrix = mat4.create();
+            var pMatrix = mat4.create();
+
+            /*
+                Gets the locations of two things called uniform variables.
+                Like the attribute we store them on the program object for convenience.
+                Using the references to the uniforms tha represent our projection matrix
+                and our model-view matrix that we got back in initShaders, we send
+                WebGL the calues from out JavaScript-style matrices.
+            */
+            function setMatrixUniforms() {
+                gl.uniformMatrix4fv(shaderProgram.pMatrixUniform, false, pMatrix);
+                gl.uniformMatrix4fv(shaderProgram.mvMatrixUniform, false, mvMatrix);
+            }
+
+            /*
+                Two global variables to hold the buffers.
+            */
+            var squareVertexPositionBuffer;
+            var squareVertexTextureCoordBuffer;
+            var squareVertexIndexBuffer;
+
+            function initBuffers() {
+
+
+                squareVertexPositionBuffer = gl.createBuffer();
+                gl.bindBuffer(gl.ARRAY_BUFFER, squareVertexPositionBuffer);
+                vertices = [
+                     1.0,  1.0,  0.0,
+                    -1.0,  1.0,  0.0,
+                     1.0, -1.0,  0.0,
+                    -1.0, -1.0,  0.0
+                ];
+                gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(vertices), gl.STATIC_DRAW);
+                squareVertexPositionBuffer.itemSize = 3;
+                squareVertexPositionBuffer.numItems = 4;
+
+                squareVertexTextureCoordBuffer = gl.createBuffer();
+                gl.bindBuffer(gl.ARRAY_BUFFER, squareVertexTextureCoordBuffer);
+                var textureCoords = [
+                    1.0, 1.0,
+                    0.0, 1.0,
+                    1.0, 0.0,
+                    0.0, 0.0
+                ];
+
+                gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(textureCoords), gl.STATIC_DRAW);
+                squareVertexTextureCoordBuffer.itemSize = 2;
+                squareVertexTextureCoordBuffer.numItems = 4;
+
+                squareVertexIndexBuffer = gl.createBuffer();
+                gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, squareVertexIndexBuffer);
+                var squareVertexIndices = [
+                    0, 1, 3,    0, 3, 2
+                ];
+                gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, new Uint16Array(squareVertexIndices), gl.STATIC_DRAW);
+                squareVertexIndexBuffer.itemSize = 1;
+                squareVertexIndexBuffer.numItems = 6;
+            }
+
+            function drawScene() {
+
+                gl.useProgram(shaderProgram);
+
+                shaderProgram.vertexPositionAttribute = gl.getAttribLocation(shaderProgram, "aVertexPosition");
+                gl.enableVertexAttribArray(shaderProgram.vertexPositionAttribute);
+
+                shaderProgram.textureCoordAttribute = gl.getAttribLocation(shaderProgram, "aTextureCoord");
+                gl.enableVertexAttribArray(shaderProgram.textureCoordAttribute);
+
+
+                shaderProgram.pMatrixUniform = gl.getUniformLocation(shaderProgram, "uPMatrix");
+                shaderProgram.mvMatrixUniform = gl.getUniformLocation(shaderProgram, "uMVMatrix");
+                shaderProgram.samplerUniform = gl.getUniformLocation(shaderProgram, "uSampler");
+
+                shaderProgram.uTextureSizeUniform = gl.getUniformLocation(shaderProgram, "u_textureSize");
+                // KERNEL SHADER
+                // -------------
+                shaderProgram.kernelLocation = gl.getUniformLocation(shaderProgram, "u_kernel[0]");
+                shaderProgram.kernelWeightLocation = gl.getUniformLocation(shaderProgram, "u_kernelWeight");
+
+                var edgeDetectKernel = [
+                    -1, -1, -1,
+                    -1,  8, -1,
+                    -1, -1, -1
+                ];
+
+                gl.viewport(0, 0, gl.viewportWidth, gl.viewportHeight);
+
+                gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+
+                mat4.perspective(45, gl.viewportWidth / gl.viewportHeight, 0.1, 100.0, pMatrix);
+
+                mat4.identity(mvMatrix);
+
+
+                mat4.translate(mvMatrix, [0.0, 0.0, -7.0]);
+                mat4.scale(mvMatrix, [2.3, 2.3, 2.3]);
+
+                gl.bindBuffer(gl.ARRAY_BUFFER, squareVertexPositionBuffer);
+                gl.vertexAttribPointer(shaderProgram.vertexPositionAttribute, squareVertexPositionBuffer.itemSize, gl.FLOAT, false, 0, 0);
+
+                gl.bindBuffer(gl.ARRAY_BUFFER, squareVertexTextureCoordBuffer);
+				gl.vertexAttribPointer(shaderProgram.textureCoordAttribute, squareVertexTextureCoordBuffer.itemSize, gl.FLOAT, false, 0, 0);
+
+                gl.activeTexture(gl.TEXTURE0);
+                gl.bindTexture(gl.TEXTURE_2D, textureSrc);
+                gl.uniform1i(shaderProgram.samplerUniform, 0);
+
+
+                gl.uniformMatrix4fv(shaderProgram.pMatrixUniform, false, pMatrix);
+                gl.uniformMatrix4fv(shaderProgram.mvMatrixUniform, false, mvMatrix);
+
+                // KERNEL SHADER
+                // -------------
+                gl.uniform1fv(shaderProgram.kernelLocation, edgeDetectKernel);
+                gl.uniform1f(shaderProgram.kernelWeightLocation, computeKernelWeight(edgeDetectKernel));
+
+
+                // set the size of the image
+                console.log(textureSrc.image.width);
+                console.log(textureSrc.image.height);
+                gl.uniform2f(shaderProgram.uTextureSizeUniform, textureSrc.image.width, textureSrc.image.height);
+
+                //gl.drawArrays(gl.TRIANGLE_STRIP, 0, squareVertexPositionBuffer.numItems);
+                gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, squareVertexIndexBuffer);
+                gl.drawElements(gl.TRIANGLES, squareVertexIndexBuffer.numItems, gl.UNSIGNED_SHORT, 0);
+            }
+
+
+            function drawTexturePatterns() {
+                gl.useProgram(shaderProgram);
+
+                shaderProgram.vertexPositionAttribute = gl.getAttribLocation(shaderProgram, "aVertexPosition");
+                gl.enableVertexAttribArray(shaderProgram.vertexPositionAttribute);
+
+                shaderProgram.textureCoordAttribute = gl.getAttribLocation(shaderProgram, "aTextureCoord");
+                gl.enableVertexAttribArray(shaderProgram.textureCoordAttribute);
+
+                shaderProgram.pMatrixUniform = gl.getUniformLocation(shaderProgram, "uPMatrix");
+                shaderProgram.mvMatrixUniform = gl.getUniformLocation(shaderProgram, "uMVMatrix");
+                shaderProgram.samplerChannel0 = gl.getUniformLocation(shaderProgram, "iChannel0");
+                shaderProgram.samplerChannel1 = gl.getUniformLocation(shaderProgram, "iChannel1");
+                shaderProgram.samplerChannel2 = gl.getUniformLocation(shaderProgram, "iChannel2");
+
+                shaderProgram.timeUniform = gl.getUniformLocation(shaderProgram, "iTime");
+
+                shaderProgram.resolutionUniform = gl.getUniformLocation(shaderProgram, "iResolution");
+
+                gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+
+                mat4.perspective(45, gl.viewportWidth / gl.viewportHeight, 0.1, 100.0, pMatrix);
+
+                mat4.identity(mvMatrix);
+
+                mat4.translate(mvMatrix, [0.0, 0.0, -7.0]);
+                mat4.scale(mvMatrix, [2.3, 2.3, 2.3]);
+
+                gl.bindBuffer(gl.ARRAY_BUFFER, squareVertexPositionBuffer);
+                gl.vertexAttribPointer(shaderProgram.vertexPositionAttribute, squareVertexPositionBuffer.itemSize, gl.FLOAT, false, 0, 0);
+
+                gl.bindBuffer(gl.ARRAY_BUFFER, squareVertexTextureCoordBuffer);
+                gl.vertexAttribPointer(shaderProgram.textureCoordAttribute, squareVertexTextureCoordBuffer.itemSize, gl.FLOAT, false, 0, 0);
+
+                gl.activeTexture(gl.TEXTURE0);
+                gl.bindTexture(gl.TEXTURE_2D, channel0Tex);
+                gl.uniform1i(shaderProgram.samplerChannel0, 0);
+
+                gl.activeTexture(gl.TEXTURE0 + 1);
+                gl.bindTexture(gl.TEXTURE_2D, channel1Tex);
+                gl.uniform1i(shaderProgram.samplerChannel1, 1);
+
+                gl.activeTexture(gl.TEXTURE0 + 2);
+                gl.bindTexture(gl.TEXTURE_2D, channel2Tex);
+                gl.uniform1i(shaderProgram.samplerChannel2, 2);
+
+                gl.uniformMatrix4fv(shaderProgram.pMatrixUniform, false, pMatrix);
+                gl.uniformMatrix4fv(shaderProgram.mvMatrixUniform, false, mvMatrix);
+
+                gl.uniform1f(shaderProgram.timeUniform, elapsed);
+                gl.uniform3f(shaderProgram.resolutionUniform, gl.viewportWidth, gl.viewportHeight, 1.0);
+
+                gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, squareVertexIndexBuffer);
+                gl.drawElements(gl.TRIANGLES, squareVertexIndexBuffer.numItems, gl.UNSIGNED_SHORT, 0);
+            }
+
+            var textures = [];
+            var framebuffers = [];
+
+            function createFramebuffers() {
+                // create 2 textures and attach them to framebuffers
+                for (var ii = 0; ii < 2; ++ii) {
+                    var texture = createAndSetupTexture();
+                    textures.push(texture);
+
+                    // make the texture the same size as the image
+                    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, textureSrc.image.width, textureSrc.image.height, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
+
+                    // Create a framebuffer
+                    var fbo = gl.createFramebuffer();
+                    framebuffers.push(fbo);
+                    gl.bindFramebuffer(gl.FRAMEBUFFER, fbo);
+
+                    // Attach a texture to it
+                    gl.framebufferTexture2D(
+                        gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, texture, 0);
+                }
+            }
+            var textureFramebufferSetupBokeh;
+            var textureFramebufferBufferABokeh;
+            var textureFramebufferBufferBBokeh;
+            var textureFramebufferBufferCBokeh;
+            var textureFramebufferBufferDBokeh;
+
+            var framebufferSetupBokeh;
+            var framebufferBufferABokeh;
+            var framebufferBufferBBokeh;
+            var framebufferBufferCBokeh;
+            var framebufferBufferDBokeh;
+
+            function createFramebuffersTestBokeh() {
+                // create 2 textures and attach them to framebuffers
+                //for (var ii = 0; ii < 1; ++i) {
+                    var texture = createAndSetupTexture();
+                    textureFramebufferSetupBokeh = texture;
+
+                    // make the texture the same size as the canvas of webgl (to render the whole screen)
+                    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.viewportWidth, gl.viewportHeight, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
+
+                    // Create a framebuffer
+                    framebufferSetupBokeh = gl.createFramebuffer();
+                    gl.bindFramebuffer(gl.FRAMEBUFFER, framebufferSetupBokeh);
+
+                    // Attach a texture to it
+                    gl.framebufferTexture2D(
+                        gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, texture, 0);
+
+
+
+
+                    var texture2 = createAndSetupTexture();
+                    textureFramebufferBufferABokeh = texture2;
+
+                    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.viewportWidth, gl.viewportHeight, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
+
+                    // Create a framebuffer
+                    framebufferBufferABokeh = gl.createFramebuffer();
+                    gl.bindFramebuffer(gl.FRAMEBUFFER, framebufferBufferABokeh);
+
+                    gl.framebufferTexture2D(
+                        gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, texture2, 0);
+
+
+
+
+                    var texture3 = createAndSetupTexture();
+                    textureFramebufferBufferBBokeh = texture3;
+
+                    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.viewportWidth, gl.viewportHeight, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
+
+                    // Create a framebuffer
+                    framebufferBufferBBokeh = gl.createFramebuffer();
+                    gl.bindFramebuffer(gl.FRAMEBUFFER, framebufferBufferBBokeh);
+
+                    // Attach a texture to it
+                    gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, texture3, 0);
+                //}
+
+
+                    var texture4 = createAndSetupTexture();
+                    textureFramebufferBufferCBokeh = texture4;
+
+                    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.viewportWidth, gl.viewportHeight, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
+
+                    // Create a framebuffer
+                    framebufferBufferCBokeh = gl.createFramebuffer();
+                    gl.bindFramebuffer(gl.FRAMEBUFFER, framebufferBufferCBokeh);
+
+                    // Attach a texture to it
+                    gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, texture4, 0);
+
+
+
+
+
+                    var texture5 = createAndSetupTexture();
+                    textureFramebufferBufferDBokeh = texture5;
+
+                    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.viewportWidth, gl.viewportHeight, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
+
+                    // Create a framebuffer
+                    framebufferBufferDBokeh = gl.createFramebuffer();
+                    gl.bindFramebuffer(gl.FRAMEBUFFER, framebufferBufferDBokeh);
+
+                    // Attach a texture to it
+                    gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, texture5, 0);
+
+            }
+
+
+
+            function drawWithKernel(kernel) {
+                gl.useProgram(shaderProgram);
+
+                shaderProgram.vertexPositionAttribute = gl.getAttribLocation(shaderProgram, "aVertexPosition");
+                gl.enableVertexAttribArray(shaderProgram.vertexPositionAttribute);
+
+                shaderProgram.textureCoordAttribute = gl.getAttribLocation(shaderProgram, "aTextureCoord");
+                gl.enableVertexAttribArray(shaderProgram.textureCoordAttribute);
+
+
+                shaderProgram.pMatrixUniform = gl.getUniformLocation(shaderProgram, "uPMatrix");
+                shaderProgram.mvMatrixUniform = gl.getUniformLocation(shaderProgram, "uMVMatrix");
+                shaderProgram.samplerUniform = gl.getUniformLocation(shaderProgram, "uSampler");
+
+                shaderProgram.uTextureSizeUniform = gl.getUniformLocation(shaderProgram, "u_textureSize");
+                // KERNEL SHADER
+                // -------------
+                shaderProgram.kernelLocation = gl.getUniformLocation(shaderProgram, "u_kernel[0]");
+                shaderProgram.kernelWeightLocation = gl.getUniformLocation(shaderProgram, "u_kernelWeight");
+
+                //gl.viewport(0, 0, gl.viewportWidth, gl.viewportHeight);
+
+                gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+
+                mat4.perspective(45, gl.viewportWidth / gl.viewportHeight, 0.1, 100.0, pMatrix);
+
+                mat4.identity(mvMatrix);
+
+
+                mat4.translate(mvMatrix, [0.0, 0.0, -7.0]);
+                mat4.scale(mvMatrix, [2.3, 2.3, 2.3]);
+
+                gl.bindBuffer(gl.ARRAY_BUFFER, squareVertexPositionBuffer);
+                gl.vertexAttribPointer(shaderProgram.vertexPositionAttribute, squareVertexPositionBuffer.itemSize, gl.FLOAT, false, 0, 0);
+
+                gl.bindBuffer(gl.ARRAY_BUFFER, squareVertexTextureCoordBuffer);
+                gl.vertexAttribPointer(shaderProgram.textureCoordAttribute, squareVertexTextureCoordBuffer.itemSize, gl.FLOAT, false, 0, 0);
+
+                gl.activeTexture(gl.TEXTURE0);
+                //gl.bindTexture(gl.TEXTURE_2D, originalImageTexture);
+                gl.uniform1i(shaderProgram.samplerUniform, 0);
+
+
+                gl.uniformMatrix4fv(shaderProgram.pMatrixUniform, false, pMatrix);
+                gl.uniformMatrix4fv(shaderProgram.mvMatrixUniform, false, mvMatrix);
+
+                // KERNEL SHADER
+                // -------------
+                gl.uniform1fv(shaderProgram.kernelLocation, kernels[kernel]);
+                gl.uniform1f(shaderProgram.kernelWeightLocation, computeKernelWeight(kernels[kernel]));
+
+                // set the size of the image
+                gl.uniform2f(shaderProgram.uTextureSizeUniform, textureSrc.image.width, textureSrc.image.height);
+
+                //gl.drawArrays(gl.TRIANGLE_STRIP, 0, squareVertexPositionBuffer.numItems);
+                gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, squareVertexIndexBuffer);
+                gl.drawElements(gl.TRIANGLES, squareVertexIndexBuffer.numItems, gl.UNSIGNED_SHORT, 0);
+            }
+
+            function drawPostprocess() {
+                gl.useProgram(shaderProgramPostprocess);
+
+                shaderProgramPostprocess.vertexPositionAttribute = gl.getAttribLocation(shaderProgramPostprocess, "aVertexPosition");
+                gl.enableVertexAttribArray(shaderProgramPostprocess.vertexPositionAttribute);
+
+                shaderProgramPostprocess.textureCoordAttribute = gl.getAttribLocation(shaderProgramPostprocess, "aTextureCoord");
+                gl.enableVertexAttribArray(shaderProgramPostprocess.textureCoordAttribute);
+
+                shaderProgramPostprocess.samplerUniform = gl.getUniformLocation(shaderProgramPostprocess, "uSampler");
+
+                gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+
+                gl.bindBuffer(gl.ARRAY_BUFFER, squareVertexPositionBuffer);
+                gl.vertexAttribPointer(shaderProgramPostprocess.vertexPositionAttribute, squareVertexPositionBuffer.itemSize, gl.FLOAT, false, 0, 0);
+
+                gl.bindBuffer(gl.ARRAY_BUFFER, squareVertexTextureCoordBuffer);
+                gl.vertexAttribPointer(shaderProgramPostprocess.textureCoordAttribute, squareVertexTextureCoordBuffer.itemSize, gl.FLOAT, false, 0, 0);
+
+                gl.activeTexture(gl.TEXTURE0);
+                gl.bindTexture(gl.TEXTURE_2D, textureFramebufferSetupBokeh);
+                gl.uniform1i(shaderProgramPostprocess.samplerUniform, 0);
+
+                gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, squareVertexIndexBuffer);
+                gl.drawElements(gl.TRIANGLES, squareVertexIndexBuffer.numItems, gl.UNSIGNED_SHORT, 0);
+            }
+
+            function drawBufferABokeh() {
+                gl.useProgram(shaderProgramBufferA); 
+
+                shaderProgramBufferA.vertexPositionAttribute = gl.getAttribLocation(shaderProgramBufferA, "aVertexPosition");
+                gl.enableVertexAttribArray(shaderProgramBufferA.vertexPositionAttribute);
+
+                shaderProgramBufferA.textureCoordAttribute = gl.getAttribLocation(shaderProgramBufferA, "aTextureCoord");
+                gl.enableVertexAttribArray(shaderProgramBufferA.textureCoordAttribute);
+
+                shaderProgramBufferA.samplerUniform = gl.getUniformLocation(shaderProgramBufferA, "uSampler");
+
+                shaderProgramBufferA.resolutionUniform = gl.getUniformLocation(shaderProgramBufferA, "iResolution");
+
+                shaderProgramBufferA.timeUniform = gl.getUniformLocation(shaderProgramBufferA, "iTime");
+
+                gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+
+                gl.bindBuffer(gl.ARRAY_BUFFER, squareVertexPositionBuffer);
+                gl.vertexAttribPointer(shaderProgramBufferA.vertexPositionAttribute, squareVertexPositionBuffer.itemSize, gl.FLOAT, false, 0, 0);
+
+                gl.bindBuffer(gl.ARRAY_BUFFER, squareVertexTextureCoordBuffer);
+                gl.vertexAttribPointer(shaderProgramBufferA.textureCoordAttribute, squareVertexTextureCoordBuffer.itemSize, gl.FLOAT, false, 0, 0);
+
+                gl.activeTexture(gl.TEXTURE0);
+                gl.bindTexture(gl.TEXTURE_2D, textureFramebufferSetupBokeh);
+                gl.uniform1i(shaderProgramBufferA.samplerUniform, 0);
+
+                gl.uniform3f(shaderProgramBufferA.resolutionUniform, gl.viewportWidth, gl.viewportHeight, 1.0);
+                gl.uniform1f(shaderProgramBufferA.timeUniform, elapsed);
+
+                gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, squareVertexIndexBuffer);
+                gl.drawElements(gl.TRIANGLES, squareVertexIndexBuffer.numItems, gl.UNSIGNED_SHORT, 0);
+            }
+
+
+            function drawBufferBBokeh() {
+                gl.useProgram(shaderProgramBufferB);
+
+                shaderProgramBufferB.vertexPositionAttribute = gl.getAttribLocation(shaderProgramBufferB, "aVertexPosition");
+                gl.enableVertexAttribArray(shaderProgramBufferB.vertexPositionAttribute);
+
+                shaderProgramBufferB.textureCoordAttribute = gl.getAttribLocation(
+                    shaderProgramBufferB, "aTextureCoord");
+                gl.enableVertexAttribArray(shaderProgramBufferB.textureCoordAttribute);
+
+                shaderProgramBufferB.samplerUniform = gl.getUniformLocation(shaderProgramBufferB, "uSampler");
+                shaderProgramBufferB.resolutionUniform = gl.getUniformLocation(shaderProgramBufferB, "iResolution");
+                shaderProgramBufferB.timeUniform = gl.getUniformLocation(shaderProgramBufferB, "iTime");
+
+                gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+
+                gl.bindBuffer(gl.ARRAY_BUFFER, squareVertexPositionBuffer);
+                gl.vertexAttribPointer(shaderProgramBufferB.vertexPositionAttribute, squareVertexPositionBuffer.itemSize, gl.FLOAT, false, 0, 0);
+
+                gl.bindBuffer(gl.ARRAY_BUFFER, squareVertexTextureCoordBuffer);
+                gl.vertexAttribPointer(shaderProgramBufferB.textureCoordAttribute, squareVertexTextureCoordBuffer.itemSize, gl.FLOAT, false, 0, 0);
+
+                gl.activeTexture(gl.TEXTURE0);
+                gl.bindTexture(gl.TEXTURE_2D, textureFramebufferSetupBokeh);
+                gl.uniform1i(shaderProgramBufferB.samplerUniform, 0);
+
+                gl.uniform3f(shaderProgramBufferB.resolutionUniform, gl.viewportWidth, gl.viewportHeight, 1.0);
+                gl.uniform1f(shaderProgramBufferB.timeUniform, elapsed);
+
+                gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, squareVertexIndexBuffer);
+                gl.drawElements(gl.TRIANGLES, squareVertexIndexBuffer.numItems, gl.UNSIGNED_SHORT, 0);
+            }
+
+            function drawBufferCBokeh() {
+                gl.useProgram(shaderProgramBufferC);
+
+                shaderProgramBufferC.vertexPositionAttribute = gl.getAttribLocation(shaderProgramBufferC, "aVertexPosition");
+                gl.enableVertexAttribArray(shaderProgramBufferC.vertexPositionAttribute);
+
+                shaderProgramBufferC.textureCoordAttribute = gl.getAttribLocation(
+                    shaderProgramBufferC, "aTextureCoord");
+                gl.enableVertexAttribArray(shaderProgramBufferC.textureCoordAttribute);
+
+                shaderProgramBufferC.samplerUniform = gl.getUniformLocation(shaderProgramBufferC, "iChannel0");
+                shaderProgramBufferC.resolutionUniform = gl.getUniformLocation(shaderProgramBufferC, "iResolution");
+                shaderProgramBufferC.timeUniform = gl.getUniformLocation(shaderProgramBufferC, "iTime");
+
+                gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+
+                gl.bindBuffer(gl.ARRAY_BUFFER, squareVertexPositionBuffer);
+                gl.vertexAttribPointer(shaderProgramBufferC.vertexPositionAttribute, squareVertexPositionBuffer.itemSize, gl.FLOAT, false, 0, 0);
+
+                gl.bindBuffer(gl.ARRAY_BUFFER, squareVertexTextureCoordBuffer);
+                gl.vertexAttribPointer(shaderProgramBufferC.textureCoordAttribute, squareVertexTextureCoordBuffer.itemSize, gl.FLOAT, false, 0, 0);
+
+                gl.activeTexture(gl.TEXTURE0);
+                gl.bindTexture(gl.TEXTURE_2D, textureFramebufferBufferABokeh);
+                gl.uniform1i(shaderProgramBufferC.samplerUniform, 0);
+
+                gl.uniform3f(shaderProgramBufferC.resolutionUniform, gl.viewportWidth, gl.viewportHeight, 1.0);
+                gl.uniform1f(shaderProgramBufferC.timeUniform, elapsed);
+
+                gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, squareVertexIndexBuffer);
+                gl.drawElements(gl.TRIANGLES, squareVertexIndexBuffer.numItems, gl.UNSIGNED_SHORT, 0);
+            }
+
+            function drawBufferDBokeh() {
+                //
+                gl.useProgram(shaderProgramBufferD);
+
+                shaderProgramBufferD.vertexPositionAttribute = gl.getAttribLocation(shaderProgramBufferD, "aVertexPosition");
+                gl.enableVertexAttribArray(shaderProgramBufferD.vertexPositionAttribute);
+
+                shaderProgramBufferD.textureCoordAttribute = gl.getAttribLocation(
+                    shaderProgramBufferD, "aTextureCoord");
+                gl.enableVertexAttribArray(shaderProgramBufferD.textureCoordAttribute);
+
+                shaderProgramBufferD.samplerUniform = gl.getUniformLocation(shaderProgramBufferD, "iChannel0");
+                shaderProgramBufferD.resolutionUniform = gl.getUniformLocation(shaderProgramBufferD, "iResolution");
+                shaderProgramBufferD.timeUniform = gl.getUniformLocation(shaderProgramBufferD, "iTime");
+
+                gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+
+                gl.bindBuffer(gl.ARRAY_BUFFER, squareVertexPositionBuffer);
+                gl.vertexAttribPointer(shaderProgramBufferD.vertexPositionAttribute, squareVertexPositionBuffer.itemSize, gl.FLOAT, false, 0, 0);
+
+                gl.bindBuffer(gl.ARRAY_BUFFER, squareVertexTextureCoordBuffer);
+                gl.vertexAttribPointer(shaderProgramBufferD.textureCoordAttribute, squareVertexTextureCoordBuffer.itemSize, gl.FLOAT, false, 0, 0);
+
+                gl.activeTexture(gl.TEXTURE0);
+                gl.bindTexture(gl.TEXTURE_2D, textureFramebufferBufferABokeh);
+                gl.uniform1i(shaderProgramBufferD.samplerUniform, 0);
+
+                gl.uniform3f(shaderProgramBufferD.resolutionUniform, gl.viewportWidth, gl.viewportHeight, 1.0);
+                gl.uniform1f(shaderProgramBufferD.timeUniform, elapsed);
+
+                gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, squareVertexIndexBuffer);
+                gl.drawElements(gl.TRIANGLES, squareVertexIndexBuffer.numItems, gl.UNSIGNED_SHORT, 0);
+            }
+
+
+            function drawImageBuffer() {
+                gl.useProgram(shaderProgramBufferImage);
+
+                shaderProgramBufferImage.vertexPositionAttribute = gl.getAttribLocation(shaderProgramBufferImage, "aVertexPosition");
+                gl.enableVertexAttribArray(shaderProgramBufferImage.vertexPositionAttribute);
+
+                shaderProgramBufferImage.textureCoordAttribute = gl.getAttribLocation(shaderProgramBufferImage, "aTextureCoord");
+                gl.enableVertexAttribArray(shaderProgramBufferImage.textureCoordAttribute);
+
+                shaderProgramBufferImage.samplerChannel0Uniform = gl.getUniformLocation(shaderProgramBufferImage, "iChannel0");
+                shaderProgramBufferImage.samplerChannel1Uniform = gl.getUniformLocation(shaderProgramBufferImage, "iChannel1");
+                shaderProgramBufferImage.samplerChannel2Uniform = gl.getUniformLocation(shaderProgramBufferImage, "iChannel2");
+                shaderProgramBufferImage.samplerChannel3Uniform = gl.getUniformLocation(shaderProgramBufferImage, "iChannel3");
+
+                shaderProgramBufferImage.resolutionUniform = gl.getUniformLocation(shaderProgramBufferImage, "iResolution");
+                shaderProgramBufferImage.timeUniform = gl.getUniformLocation(shaderProgramBufferImage, "iTime");
+
+                gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+
+                gl.bindBuffer(gl.ARRAY_BUFFER, squareVertexPositionBuffer);
+                gl.vertexAttribPointer(shaderProgramBufferImage.vertexPositionAttribute, squareVertexPositionBuffer.itemSize, gl.FLOAT, false, 0, 0);
+
+                gl.bindBuffer(gl.ARRAY_BUFFER, squareVertexTextureCoordBuffer);
+                gl.vertexAttribPointer(shaderProgramBufferImage.textureCoordAttribute, squareVertexTextureCoordBuffer.itemSize, gl.FLOAT, false, 0, 0);
+
+                gl.activeTexture(gl.TEXTURE0);
+                gl.bindTexture(gl.TEXTURE_2D, textureFramebufferBufferABokeh);
+                gl.uniform1i(shaderProgramBufferImage.samplerChannel0Uniform, 0);
+
+                gl.activeTexture(gl.TEXTURE0 + 1);
+                gl.bindTexture(gl.TEXTURE_2D, textureFramebufferBufferBBokeh);
+                gl.uniform1i(shaderProgramBufferImage.samplerChannel1Uniform, 1);
+
+                gl.activeTexture(gl.TEXTURE0 + 2);
+                gl.bindTexture(gl.TEXTURE_2D, textureFramebufferBufferCBokeh);
+                gl.uniform1i(shaderProgramBufferImage.samplerChannel2Uniform, 2);
+
+                gl.activeTexture(gl.TEXTURE0 + 3);
+                gl.bindTexture(gl.TEXTURE_2D, textureFramebufferBufferDBokeh);
+                gl.uniform1i(shaderProgramBufferImage.samplerChannel3Uniform, 3);
+
+                gl.uniform3f(shaderProgramBufferImage.resolutionUniform, gl.viewportWidth, gl.viewportHeight, 1.0);
+                gl.uniform1f(shaderProgramBufferImage.timeUniform, elapsed);
+
+                gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, squareVertexIndexBuffer);
+                gl.drawElements(gl.TRIANGLES, squareVertexIndexBuffer.numItems, gl.UNSIGNED_SHORT, 0);
+            }
+
+            function drawEffectsBokeh() 
+            {
+                //gl.useProgram(shaderProgram);
+
+                gl.bindFramebuffer(gl.FRAMEBUFFER, framebufferSetupBokeh);
+                // Tell the shader the resolution of the framebuffer
+                //shaderProgram.uTextureSizeUniform = gl.getUniformLocation(shaderProgram, "u_textureSize");
+                //gl.uniform2f(shaderProgram.uTextureSizeUniform, width, height);
+
+                // Tell webgl the viewport setting needed for framebuffer.
+                gl.viewport(0, 0, gl.viewportWidth, gl.viewportHeight);
+                if (readyChannel0 && readyChannel1 && readyChannel2) {
+                    drawTexturePatterns();
+                }
+
+                
+                gl.bindFramebuffer(gl.FRAMEBUFFER, framebufferBufferABokeh);
+                gl.viewport(0, 0, gl.viewportWidth, gl.viewportHeight);
+                drawBufferABokeh();
+
+                gl.bindFramebuffer(gl.FRAMEBUFFER, framebufferBufferBBokeh);
+                gl.viewport(0, 0, gl.viewportWidth, gl.viewportHeight);
+                drawBufferBBokeh();
+
+                gl.bindFramebuffer(gl.FRAMEBUFFER, framebufferBufferCBokeh);
+                gl.viewport(0, 0, gl.viewportWidth, gl.viewportHeight);
+                drawBufferCBokeh();
+
+                gl.bindFramebuffer(gl.FRAMEBUFFER, framebufferBufferDBokeh);
+                gl.viewport(0, 0, gl.viewportWidth, gl.viewportHeight);
+                drawBufferDBokeh();                
+
+                setFramebuffer(null, gl.viewportWidth, gl.viewportHeight);  
+                drawImageBuffer();
+            }
+
+
+
+
+
+            function drawEffectsPingPong() 
+            {
+                gl.useProgram(shaderProgram);
+
+                // start with the original image
+                gl.bindTexture(gl.TEXTURE_2D, originalImageTexture);
+
+                // don't y flip images while drawing to textures
+                shaderProgram.flipYTextureUniform = gl.getUniformLocation(shaderProgram, "flipY");
+                gl.uniform1f(shaderProgram.flipYTextureUniform, 1.0);
+
+                // loop through each effect we want to apply
+                for (var ii = 0; ii < effectsToApply.length; ++ii) {
+                    // Setup to draw into one of the framebuffers
+                    setFramebuffer(framebuffers[ii%2], textureSrc.image.width, textureSrc.image.height);
+
+                    drawWithKernel(effectsToApply[ii]);
+
+                    // for the next draw, use the texture we just rendered to.
+                    gl.bindTexture(gl.TEXTURE_2D, textures[ii % 2]);
+                    //console.log(ii);
+                }
+
+                // finally draw the result to the canvas.
+                gl.uniform1f(shaderProgram.flipYTextureUniform, -1.0);
+                //setFramebuffer(null, gl.viewportWidth, gl.viewportHeight);
+                //console.log(textureSrc.image.width);
+                //console.log(textureSrc.image.height);
+                //console.log(gl.viewportWidth);
+                //console.log(gl.viewportHeight);
+                setFramebuffer(null, gl.viewportWidth, gl.viewportHeight);
+                drawWithKernel("normal");
+            }
+
+            function setFramebuffer(fbo, width, height) {
+                // make this the framebuffer we are rendering to.
+                gl.bindFramebuffer(gl.FRAMEBUFFER, fbo);
+
+                // Tell the shader the resolution of the framebuffer
+                shaderProgram.uTextureSizeUniform = gl.getUniformLocation(shaderProgram, "u_textureSize");
+                gl.uniform2f(shaderProgram.uTextureSizeUniform, width, height);
+
+                // Tell webgl the viewport setting needed for framebuffer.
+                gl.viewport(0, 0, width, height);
+            }
+
+            function tick()
+            {
+                requestAnimFrame(tick);
+                //if (ready) {
+                //    drawEffectsPingPong();
+                    //drawWithKernel('normal');
+                //}
+                if (readyChannel0 && readyChannel1 && readyChannel2) {
+                    drawEffectsBokeh();
+                    //drawTexturePatterns();
+                }
+                clock();
+            }
+
+            var elapsed;
+            var time_start;
+
+            function clock() 
+            {
+                var timeNow = new Date().getTime();
+                if (time_start != 0)
+                {
+                    elapsed = timeNow - time_start;
+                    elapsed /= 1000;
+
+                    //console.log(elapsed);
+                }
+            }
+
+            function webGLStart() {
+                var canvas = document.getElementById("lesson01-canvas");
+                initGL(canvas);
+                initShaders();
+                initShaderBufferA();
+                initshaderBufferB();
+                initshaderBufferC();
+                initshaderBufferD();
+
+                initShaderBufferImage();
+                initBuffers();
+                //initTexture();
+                initTexturePatterns();
+                //initTexture1();
+                //initTexture2();
+                //createFramebuffers();
+                
+                createFramebuffersTestBokeh();
+
+                gl.clearColor(0.0, 0.0, 0.0, 1.0);
+                gl.enable(gl.DEPTH_TEST);
+
+                time_start = new Date().getTime();
+
+                tick();
+            }
+        </script>
+    </head>
+    <!--
+        HTML Code, with Canvas element for rendering the webgl 3D content.
+    -->
+    <body onload="webGLStart();">
+        <canvas id="lesson01-canvas" style="border: none;" width="500" height="500"></canvas>
+    </body>
+</html>
