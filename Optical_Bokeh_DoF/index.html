@@ -1392,6 +1392,90 @@
         }
     </script>
 
+    <script id="shader-fs-FirstBokehBlurPass-CombinedBlurs" type="x-shader/x-fragment">
+        precision mediump float;
+
+        uniform sampler2D uSampler;
+
+        uniform float bokehStrength;
+
+        uniform vec2 uResolution;
+
+        varying vec2 vTextureCoord;
+
+        const int NUM_SAMPLES = 32;
+
+        float OneOverScreenWidth;
+        float OneOverScreenHeight;
+
+        // Prototype function
+        float GatherAndApply(vec2 uv, float stepDistance, inout vec4 outputColor);
+
+        void main() {
+
+            vec4 outputColor = vec4(0.0, 0.0, 0.0, 1.0);
+            vec4 outputColor2 = vec4(0.0, 0.0, 0.0, 1.0);
+
+            OneOverScreenWidth = 1.0/uResolution.x;
+            OneOverScreenHeight = 1.0/uResolution.y;
+
+            vec4 baseColour = texture2D(uSampler, vTextureCoord);
+
+            float sampleCount0 = 0.0;
+            float sampleCount1 = 0.0;
+
+            float xStep = 0.866 * (OneOverScreenWidth/OneOverScreenHeight);
+
+            for (int i = 0; i < NUM_SAMPLES; i++) {
+                float ammountBlur = bokehStrength;
+                float stepDistance = (float(i) + 0.5) * OneOverScreenHeight * ammountBlur;
+
+                // Vertical blur
+                vec2 step0 = vec2(0.0, -1.0) * stepDistance;
+                sampleCount0 += GatherAndApply(vTextureCoord + step0, stepDistance, outputColor);
+
+                // Diagonal blur
+                vec2 step1 = vec2(xStep, 0.5) * stepDistance;
+                sampleCount1 += GatherAndApply(vTextureCoord + step1, stepDistance, outputColor2);
+            }
+
+            //outputColor.xyz = vec3(clamp(outputColor.x, 0.0, 1.0), clamp(outputColor.y, 0.0, 1.0), clamp(outputColor.z, 0.0, 1.0));
+
+            // Normalise if any color was added.
+            outputColor.xyz = sampleCount0 > 0.0 ? outputColor.xyz / sampleCount0 : vec3(0.0, 1.0, 0.0);
+            outputColor2.xyz = sampleCount1 > 0.0 ? (outputColor2.xyz / sampleCount1) : vec3(0.0, 1.0, 0.0);
+
+            //gl_FragColor = vec4(vec3(bokehStrength) * vec3(baseColour), 1.0);
+            //gl_FragColor = vec4((gl_FragCoord.xy)/vec2(OneOverScreenWidth, OneOverScreenHeight), 0.0, 1.0);
+            gl_FragColor = (outputColor + outputColor2)/2.0;
+        }
+
+
+        float GatherAndApply(vec2 uv, float stepDistance, inout vec4 outColor) {
+            //outColor = vec4(1.0, 0.0, 0.0, 1.0);
+            // outCol = baseColour; outColor = currCol;
+            vec4 col = texture2D(uSampler, uv);
+            //float absCoC = abs(10000.0*bokehStrength/1.0);
+            float absCoC = abs(bokehStrength);
+
+            // Accumulate the colour. Allow partial sampling at the pixel bounday for smoothness.
+            float sampleFraction = clamp((absCoC - stepDistance) / OneOverScreenHeight, 0.0, 1.0);
+            //sampleFraction = 1.0;
+
+            if (((col.x + col.y + col.z) / 3.0) > 0.8) {
+                col.xyz = vec3(10) * col.xyz;
+            }
+
+            outColor.xyz += sampleFraction * col.xyz;
+            //outColor.xyz = vec3(1.0, 0.0, 0.0);
+            //outColor.xyz = col.xyz;
+            // CoC , 0 
+
+            //return 0.0;
+            return sampleFraction;
+        }
+    </script>
+
     <script id="shader-fs-FirstBokehBlurPass-DownLeft" type="x-shader/x-fragment">
         precision mediump float;
 
@@ -1483,7 +1567,7 @@
         float OneOverScreenWidth;
         float OneOverScreenHeight;
 
-        float GatherAndApply(vec2 uv, float stepDistance, inout vec3 outputColor);
+        float GatherAndApply(vec2 uv, float stepDistance, inout vec4 outColor);
 
         void main(void) {
             vec4 outputColor = vec4(0.0, 0.0, 0.0, 1.0);
@@ -1542,6 +1626,7 @@
         precision mediump float;
 
         uniform sampler2D uSampler;
+        uniform sampler2D uSampler2;
 
         uniform float bokehStrength;
 
@@ -1554,15 +1639,19 @@
         float OneOverScreenWidth;
         float OneOverScreenHeight;
 
-        float GatherAndApply(vec2 uv, float stepDistance, inout vec3 outputColor);
+        float GatherAndApply(vec2 uv, float stepDistance, inout vec4 outColor);
 
         void main(void) {
-            vec4 outputColor = vec4(0.0, 0.0, 0.0, 1.0);
+
+            //vec4 color = texture2D(uSampler2, vTextureCoord);
+            //gl_FragColor = color; return;
+            vec4 outputColor2 = vec4(0.0, 0.0, 0.0, 1.0);
 
             OneOverScreenWidth = 1.0/uResolution.x;
             OneOverScreenHeight = 1.0/uResolution.y;
 
-            vec4 baseColour = texture2D(uSampler, vTextureCoord);
+            //vec4 baseColour1 = texture2D(uSamplerVerticalPass1, vTextureCoord);
+            //vec4 baseColour2 = texture2D(uSamplerDiagonalPass1, vTextureCoord);
 
             float sampleCount0 = 0.0;
 
@@ -1575,12 +1664,14 @@
 
                 // Diagonal blur
                 vec2 step0 = vec2(-xStep, 0.5) * stepDistance;
-                sampleCount0 += GatherAndApply(vTextureCoord + step0, stepDistance, outputColor);
+                sampleCount0 += GatherAndApply(vTextureCoord + step0, stepDistance, outputColor2);
             }
             // Normalise if any colors was added
-            outputColor.xyz = sampleCount0 > 0.0 ? outputColor.xyz / sampleCount0 : vec3(0.0, 1.0, 0.0);
+            outputColor2.xyz = sampleCount0 > 0.0 ? outputColor2.xyz / sampleCount0 : vec3(0.0, 1.0, 0.0);
 
-            gl_FragColor = outputColor;
+            vec4 outputColor = texture2D(uSampler2, vTextureCoord);
+
+            gl_FragColor = outputColor2;
         }
 
         float GatherAndApply(vec2 uv, float stepDistance, inout vec4 outColor) {
@@ -1608,6 +1699,86 @@
         }
 
     </script>
+
+
+    <script id="shader-fs-FirstAndSecondCombined" type="x-shader/x-fragment">
+        precision mediump float;
+
+        uniform sampler2D uSampler;
+        uniform sampler2D uSampler2;
+
+        uniform float bokehStrength;
+
+        uniform vec2 uResolution;
+
+        varying vec2 vTextureCoord;
+
+        const int NUM_SAMPLES = 32;
+
+        float OneOverScreenWidth;
+        float OneOverScreenHeight;
+
+        float GatherAndApply(vec2 uv, float stepDistance, inout vec4 outColor);
+
+        void main(void) {
+
+            //vec4 color = texture2D(uSampler2, vTextureCoord);
+            //gl_FragColor = color; return;
+            vec4 outputColor2 = vec4(0.0, 0.0, 0.0, 1.0);
+
+            OneOverScreenWidth = 1.0/uResolution.x;
+            OneOverScreenHeight = 1.0/uResolution.y;
+
+            //vec4 baseColour1 = texture2D(uSamplerVerticalPass1, vTextureCoord);
+            //vec4 baseColour2 = texture2D(uSamplerDiagonalPass1, vTextureCoord);
+
+            float sampleCount0 = 0.0;
+
+            float xStep = 0.866 * (OneOverScreenWidth/OneOverScreenHeight);
+
+            for (int i = 0; i < NUM_SAMPLES; i++)
+            {
+                float ammountBlur = bokehStrength;
+                float stepDistance = (float(i) + 0.5) * OneOverScreenHeight * ammountBlur;
+
+                // Diagonal blur
+                vec2 step0 = vec2(-xStep, 0.5) * stepDistance;
+                sampleCount0 += GatherAndApply(vTextureCoord + step0, stepDistance, outputColor2);
+            }
+            // Normalise if any colors was added
+            outputColor2.xyz = sampleCount0 > 0.0 ? outputColor2.xyz / sampleCount0 : vec3(0.0, 1.0, 0.0);
+
+            vec4 outputColor = texture2D(uSampler2, vTextureCoord);
+
+            gl_FragColor = (2.0*outputColor + outputColor2) / 2.0;
+        }
+
+        float GatherAndApply(vec2 uv, float stepDistance, inout vec4 outColor) {
+            //outColor = vec4(1.0, 0.0, 0.0, 1.0);
+            // outCol = baseColour; outColor = currCol;
+            vec4 col = texture2D(uSampler, uv);
+            //float absCoC = abs(10000.0*bokehStrength/1.0);
+            float absCoC = abs(bokehStrength);
+
+            // Accumulate the colour. Allow partial sampling at the pixel bounday for smoothness.
+            float sampleFraction = clamp((absCoC - stepDistance) / OneOverScreenHeight, 0.0, 1.0);
+            //sampleFraction = 1.0;
+
+            if (((col.x + col.y + col.z) / 3.0) > 0.8) {
+                col.xyz = vec3(10) * col.xyz;
+            }
+
+            outColor.xyz += sampleFraction * col.xyz;
+            //outColor.xyz = vec3(1.0, 0.0, 0.0);
+            //outColor.xyz = col.xyz;
+            // CoC , 0 
+
+            //return 0.0;
+            return sampleFraction;
+        }
+
+    </script>
+
 
 
 	<script id="shader-vs-postprocess" type="x-shader/x-vertex">
@@ -2046,6 +2217,23 @@
             }
         }
 
+        var shaderProgramFirstPassCombined;
+        function initShadersFirstPassCombined() 
+        {
+            var fragmentShader = getShader(gl, "shader-fs-FirstBokehBlurPass-CombinedBlurs");
+            var vertexShader = getShader(gl, "shader-vs-postprocess");
+
+             shaderProgramFirstPassCombined = gl.createProgram();
+            gl.attachShader( shaderProgramFirstPassCombined, vertexShader);
+            gl.attachShader( shaderProgramFirstPassCombined, fragmentShader);
+            gl.linkProgram( shaderProgramFirstPassCombined);
+
+            if (!gl.getProgramParameter( shaderProgramFirstPassCombined, gl.LINK_STATUS)) {
+                alert("Could not initialise shaders");
+            }
+        }
+
+
         var shaderProgramSecondPassOpBokDiagLeft;
         function initShadersSecondPassOpticalBokehDiagonalLeft() 
         {
@@ -2054,7 +2242,7 @@
 
             shaderProgramSecondPassOpBokDiagLeft = gl.createProgram();
             gl.attachShader(shaderProgramSecondPassOpBokDiagLeft, vertexShader);
-            gl.attachShader(shaderProgramSecondPassOpBokDiagRight, fragmentShader);
+            gl.attachShader(shaderProgramSecondPassOpBokDiagLeft, fragmentShader);
             gl.linkProgram(shaderProgramSecondPassOpBokDiagLeft);
 
             if (!gl.getProgramParameter(shaderProgramSecondPassOpBokDiagLeft, gl.LINK_STATUS)) {
@@ -2078,6 +2266,24 @@
                 alert("Could not initialise shaders");
             }   
         }
+
+        //shader-fs-FirstAndSecondCombined
+        var shaderProgramBothPassesCombined;
+        function initShadersBokehCombinedPasses()
+        {
+            var fragmentShader = getShader(gl, "shader-fs-FirstAndSecondCombined");
+            var vertexShader = getShader(gl, "shader-vs-postprocess");
+
+            shaderProgramBothPassesCombined = gl.createProgram();
+            gl.attachShader(shaderProgramBothPassesCombined, vertexShader);
+            gl.attachShader(shaderProgramBothPassesCombined, fragmentShader);
+            gl.linkProgram(shaderProgramBothPassesCombined);
+
+            if (!gl.getProgramParameter(shaderProgramBothPassesCombined, gl.LINK_STATUS)) {
+                alert("Could not initialise shaders");
+            } 
+        }
+
 
 
         var shaderProgramLightingPhong;
@@ -3808,6 +4014,45 @@
             gl.drawElements(gl.TRIANGLES, screenFillingIndexBuffer.numItems, gl.UNSIGNED_SHORT, 0);
         }
 
+        function drawBokehFirstPassCombined() {
+            //shaderProgramFirstPassCombined
+            gl.useProgram(shaderProgramFirstPassCombined);
+
+            shaderProgramFirstPassCombined.vertexPositionAttribute = gl.getAttribLocation(shaderProgramFirstPassCombined, "aVertexPosition");
+            gl.enableVertexAttribArray(shaderProgramFirstPassCombined.vertexPositionAttribute);
+
+            shaderProgramFirstPassCombined.textureCoordAttribute = gl.getAttribLocation(shaderProgramFirstPassCombined, "aTextureCoord");
+            gl.enableVertexAttribArray(shaderProgramFirstPassCombined.textureCoordAttribute);
+
+            shaderProgramFirstPassCombined.samplerUniform = gl.getUniformLocation(shaderProgramFirstPassCombined, "uSampler");
+
+            shaderProgramFirstPassCombined.resolutionUniform = gl.getUniformLocation(shaderProgramFirstPassCombined, "uResolution");
+
+            shaderProgramFirstPassCombined.bokehStrengthUniform = gl.getUniformLocation(shaderProgramFirstPassCombined, "bokehStrength");
+
+            gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+
+            gl.bindBuffer(gl.ARRAY_BUFFER, screenFillingVertexPositionBuffer);
+            gl.vertexAttribPointer(shaderProgramFirstPassCombined.vertexPositionAttribute, screenFillingVertexPositionBuffer.itemSize, gl.FLOAT, false, 0, 0);
+
+            gl.bindBuffer(gl.ARRAY_BUFFER, screenFillingTextureCoordBuffer);
+            gl.vertexAttribPointer(shaderProgramFirstPassCombined.textureCoordAttribute,
+                screenFillingTextureCoordBuffer.itemSize, gl.FLOAT, false, 0, 0);
+
+            gl.activeTexture(gl.TEXTURE0);
+            gl.bindTexture(gl.TEXTURE_2D, textureFramebufferSetupScene);
+            gl.uniform1i(shaderProgramFirstPassCombined.samplerUniform, 0);
+
+            gl.uniform2f(shaderProgramFirstPassCombined.resolutionUniform, gl.viewportWidth, gl.viewportHeight);
+
+            gl.uniform1f(shaderProgramFirstPassCombined.bokehStrengthUniform, bokehStrength);
+
+            gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, screenFillingIndexBuffer);
+            gl.drawElements(gl.TRIANGLES, screenFillingIndexBuffer.numItems, gl.UNSIGNED_SHORT, 0);
+
+
+        }
+
         function drawBokehSecondPassDiagonalLeft() {
             gl.useProgram(shaderProgramSecondPassOpBokDiagLeft);
 
@@ -3849,10 +4094,13 @@
             shaderProgramSecondPassOpBokDiagRight.vertexPosition = gl.getAttribLocation(shaderProgramSecondPassOpBokDiagRight, "aVertexPosition");
             gl.enableVertexAttribArray(shaderProgramSecondPassOpBokDiagRight.vertexPositionAttribute);
 
-            shaderProgramSecondPassOpBokDiagRight.textureCoordAttribute = gl.getAttribLocation(shaderProgramSecondPassOpBokDiagLeft, "aTextureCoord");
-            gl.enableVertexAttribArray(shaderProgramSecondPassOpBokDiagLeft.textureCoordAttribute);
+            shaderProgramSecondPassOpBokDiagRight.textureCoordAttribute = gl.getAttribLocation(shaderProgramSecondPassOpBokDiagRight, "aTextureCoord");
+            gl.enableVertexAttribArray(shaderProgramSecondPassOpBokDiagRight.textureCoordAttribute);
 
             shaderProgramSecondPassOpBokDiagRight.samplerUniform = gl.getUniformLocation(shaderProgramSecondPassOpBokDiagRight, "uSampler");
+
+            //shaderProgramSecondPassOpBokDiagRight.samplerUniform2 = gl.getUniformLocation(shaderProgramSecondPassOpBokDiagRight, "uSampler2");
+
 
             shaderProgramSecondPassOpBokDiagRight.resolutionUniform = gl.getUniformLocation(shaderProgramSecondPassOpBokDiagRight, "uResolution");
 
@@ -3861,10 +4109,68 @@
             gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
 
             gl.bindBuffer(gl.ARRAY_BUFFER, screenFillingVertexPositionBuffer);
-            gl.vertexAttribPointer(shaderProgramSecondPassOpBokDiagLeft.vertexPositionAttribute, screenFillingVertexPositionBuffer.itemSize, gl.FLOAT, false, 0, 0);
+            gl.vertexAttribPointer(shaderProgramSecondPassOpBokDiagRight.vertexPositionAttribute, screenFillingVertexPositionBuffer.itemSize, gl.FLOAT, false, 0, 0);
 
             gl.bindBuffer(gl.ARRAY_BUFFER, screenFillingTextureCoordBuffer);
             gl.vertexAttribPointer(shaderProgramSecondPassOpBokDiagRight.textureCoordAttribute, screenFillingTextureCoordBuffer.itemSize, gl.FLOAT, false, 0, 0);
+
+            gl.activeTexture(gl.TEXTURE0);
+            gl.bindTexture(gl.TEXTURE_2D, textureFramebufferBufferDBokeh);
+            gl.uniform1i(shaderProgramSecondPassOpBokDiagRight.samplerUniform, 0);
+
+            //gl.activeTexture(gl.TEXTURE1);
+            //gl.bindTexture(gl.TEXTURE_2D, textureFramebufferBufferBBokeh);
+            //gl.uniform1i(shaderProgramSecondPassOpBokDiagRight.samplerUniform2, 1);
+
+            gl.uniform2f(shaderProgramSecondPassOpBokDiagRight.resolutionUniform, gl.viewportWidth, gl.viewportHeight);
+
+            gl.uniform1f(shaderProgramSecondPassOpBokDiagRight.bokehStrengthUniform, bokehStrength);
+
+            gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, screenFillingIndexBuffer);
+            gl.drawElements(gl.TRIANGLES, screenFillingIndexBuffer.numItems, gl.UNSIGNED_SHORT, 0);
+        }
+
+        // shaderProgramBothPassesCombined
+        function drawBokehPassesCombined() {
+            gl.useProgram(shaderProgramBothPassesCombined);
+
+            shaderProgramBothPassesCombined.vertexPosition = gl.getAttribLocation(shaderProgramBothPassesCombined, "aVertexPosition");
+            gl.enableVertexAttribArray(shaderProgramBothPassesCombined.vertexPositionAttribute);
+
+            shaderProgramBothPassesCombined.textureCoordAttribute = gl.getAttribLocation(shaderProgramBothPassesCombined, "aTextureCoord");
+            gl.enableVertexAttribArray(shaderProgramBothPassesCombined.textureCoordAttribute);
+
+            shaderProgramBothPassesCombined.samplerUniform = gl.getUniformLocation(shaderProgramBothPassesCombined, "uSampler");
+
+            shaderProgramBothPassesCombined.samplerUniform2 = gl.getUniformLocation(shaderProgramBothPassesCombined, "uSampler2");
+
+
+            shaderProgramBothPassesCombined.resolutionUniform = gl.getUniformLocation(shaderProgramBothPassesCombined, "uResolution");
+
+            shaderProgramBothPassesCombined.bokehStrengthUniform = gl.getUniformLocation(shaderProgramBothPassesCombined, "bokehStrength");
+
+            gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+
+            gl.bindBuffer(gl.ARRAY_BUFFER, screenFillingVertexPositionBuffer);
+            gl.vertexAttribPointer(shaderProgramBothPassesCombined.vertexPositionAttribute, screenFillingVertexPositionBuffer.itemSize, gl.FLOAT, false, 0, 0);
+
+            gl.bindBuffer(gl.ARRAY_BUFFER, screenFillingTextureCoordBuffer);
+            gl.vertexAttribPointer(shaderProgramBothPassesCombined.textureCoordAttribute, screenFillingTextureCoordBuffer.itemSize, gl.FLOAT, false, 0, 0);
+
+            gl.activeTexture(gl.TEXTURE0);
+            gl.bindTexture(gl.TEXTURE_2D, textureFramebufferBufferDBokeh);
+            gl.uniform1i(shaderProgramBothPassesCombined.samplerUniform, 0);
+
+            gl.activeTexture(gl.TEXTURE1);
+            gl.bindTexture(gl.TEXTURE_2D, textureFramebufferBufferBBokeh);
+            gl.uniform1i(shaderProgramBothPassesCombined.samplerUniform2, 1);
+
+            gl.uniform2f(shaderProgramBothPassesCombined.resolutionUniform, gl.viewportWidth, gl.viewportHeight);
+
+            gl.uniform1f(shaderProgramBothPassesCombined.bokehStrengthUniform, bokehStrength);
+
+            gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, screenFillingIndexBuffer);
+            gl.drawElements(gl.TRIANGLES, screenFillingIndexBuffer.numItems, gl.UNSIGNED_SHORT, 0);
         }
 
 
@@ -3910,15 +4216,17 @@
 
 			gl.bindFramebuffer(gl.FRAMEBUFFER, framebufferBufferBBokeh);
 			gl.viewport(0, 0, gl.viewportWidth, gl.viewportHeight);
-			drawBufferBBokeh();
+			//drawBufferBBokeh();
+            drawBokehSecondPassDiagonalLeft();
 
 			gl.bindFramebuffer(gl.FRAMEBUFFER, framebufferBufferCBokeh);
 			gl.viewport(0, 0, gl.viewportWidth, gl.viewportHeight);
-			drawBufferCBokeh();
+			//drawBufferCBokeh();
+            drawBokehSecondPassDiagonalRight();
 
 			gl.bindFramebuffer(gl.FRAMEBUFFER, framebufferBufferDBokeh);
 			gl.viewport(0, 0, gl.viewportWidth, gl.viewportHeight);
-			drawBufferDBokeh();
+			drawBokehFirstPassCombined();
 
 
 
@@ -3926,7 +4234,8 @@
 			gl.viewport(0, 0, gl.viewportWidth, gl.viewportHeight);
 
 			//drawScreenFillingTextureBokeh();
-            drawScreenTexture(textureAuxFramebuffer, 0);
+            //drawScreenTexture(textureAuxFramebuffer, 0); // BUENA
+            drawBokehPassesCombined();
 
 
 
@@ -3948,13 +4257,18 @@
 
 
             gl.viewport(3 * (gl.viewportWidth/4), 3*(gl.viewportHeight/4.0), gl.viewportWidth/4.0, gl.viewportHeight/4.0);
-            drawScreenTexture(textureFramebufferFocalDepthScene, 1);
-
-            gl.viewport(3 * (gl.viewportWidth/4), 2*(gl.viewportHeight/4.0), gl.viewportWidth/4.0, gl.viewportHeight/4.0);
             drawScreenTexture(textureAuxFramebuffer, 1);
 
-            gl.viewport(3 * (gl.viewportWidth/4), 1*(gl.viewportHeight/4.0), gl.viewportWidth/4.0, gl.viewportHeight/4.0);
+            gl.viewport(3 * (gl.viewportWidth/4), 2*(gl.viewportHeight/4.0), gl.viewportWidth/4.0, gl.viewportHeight/4.0);
             drawScreenTexture(textureFramebufferBufferABokeh, 1);
+
+            gl.viewport(3 * (gl.viewportWidth/4), 1*(gl.viewportHeight/4.0), gl.viewportWidth/4.0, gl.viewportHeight/4.0);
+            drawScreenTexture(textureFramebufferBufferBBokeh, 1);
+
+            gl.viewport(3 * (gl.viewportWidth/4), 0*(gl.viewportHeight/4.0), gl.viewportWidth/4.0, gl.viewportHeight/4.0);
+            drawScreenTexture(textureFramebufferBufferCBokeh, 1);
+
+
 
 
 
@@ -4201,6 +4515,8 @@
             initShadersFirstPassOpticalBokehDiagonal();
             initShadersSecondPassOpticalBokehDiagonalLeft();
             initShadersSecondPassOpticalBokehDiagonalRight();
+            initShadersFirstPassCombined();
+            initShadersBokehCombinedPasses();
 
 
 			createFramebuffers();
