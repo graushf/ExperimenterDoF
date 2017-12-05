@@ -6,6 +6,7 @@
 
         <script type="text/javascript" src="glMatrix-0.9.5.min.js"></script>
         <script type="text/javascript" src="webgl-utils.js"></script>
+        <script type="text/javascript" src="handle-keys.js"></script>
 
         <!--
             These shaders are not written in JavaScript, even thought the ancestry
@@ -258,7 +259,7 @@
 
             #define USE_RANDOM
 
-            const vec2 blurdir = vec2(0.0, 1.0);
+            const vec2 blurdir = vec2(0.0, -1.0);
             // ===
             const float blurdist_px = 32.0;
             const int NUM_SAMPLES = 16;
@@ -269,6 +270,7 @@
             uniform vec3 iResolution; // The viewport resolution (z is pixel aspect ratio, usually 1.0)
             uniform float iTime; // Current time in seconds
 
+            uniform float bokehStrength;
 
             //#define GAMMA_SRGB
             #if defined( GAMMA_SRGB )
@@ -330,7 +332,7 @@
                 vec2 uv = gl_FragCoord.xy / iResolution.xx;
 
                 float sinblur = (0.55 + 0.45 * sin(5.0 * uv.x + iTime ) );
-                float blurdist = blurdist_px * sinblur;
+                float blurdist = blurdist_px * bokehStrength;
 
                 vec2 p0 = uv;
                 vec2 p1 = uv + blurdist * blurvec;
@@ -784,6 +786,8 @@
         <script type="text/javascript">
 
             var gl;
+
+            var bokehStrength = 0.9;
 
             // Define several convolution kernels
             var kernels = {
@@ -1646,6 +1650,8 @@
 
                 shaderProgramBufferA.timeUniform = gl.getUniformLocation(shaderProgramBufferA, "iTime");
 
+                shaderProgramBufferA.bokehStrengthUniform = gl.getUniformLocation(shaderProgramBufferA, "bokehStrength");
+
                 gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
 
                 gl.bindBuffer(gl.ARRAY_BUFFER, squareVertexPositionBuffer);
@@ -1660,6 +1666,8 @@
 
                 gl.uniform3f(shaderProgramBufferA.resolutionUniform, gl.viewportWidth, gl.viewportHeight, 1.0);
                 gl.uniform1f(shaderProgramBufferA.timeUniform, elapsed);
+
+                gl.uniform1f(shaderProgramBufferA.bokehStrengthUniform, bokehStrength);
 
                 gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, squareVertexIndexBuffer);
                 gl.drawElements(gl.TRIANGLES, squareVertexIndexBuffer.numItems, gl.UNSIGNED_SHORT, 0);
@@ -1848,7 +1856,7 @@
                 drawBufferDBokeh();                
 
                 setFramebuffer(null, gl.viewportWidth, gl.viewportHeight);  
-                drawImageBuffer();
+                drawBufferABokeh();
             }
 
 
@@ -1904,6 +1912,7 @@
             function tick()
             {
                 requestAnimFrame(tick);
+                handleKeys();
                 //if (ready) {
                 //    drawEffectsPingPong();
                     //drawWithKernel('normal');
@@ -1953,6 +1962,9 @@
                 gl.enable(gl.DEPTH_TEST);
 
                 time_start = new Date().getTime();
+
+                document.onkeydown = handleKeyDown;
+                document.onkeyup = handleKeyUp;
 
                 tick();
             }

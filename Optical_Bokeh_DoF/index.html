@@ -1332,6 +1332,23 @@
             vec4 outputColor = vec4(0.0, 0.0, 0.0, 1.0);
             vec4 outputColor2 = vec4(0.0, 0.0, 0.0, 1.0);
 
+            //vec2 blurvec = normalize(blurdir) / uResolution.xx;
+            //vec2 uv = gl_FragCoord.xy / uResolution.xy;
+
+            //float blurdist = blurdist_px * bokehStrength;
+
+            //vec2 p0 = uv;
+            //vec2 p1 = uv + blurdist * blurvec;
+            //vec2 stepvec = (p1 - p0) / float(NUM_SAMPLES);
+            //vec2 p = p0;
+
+            #if defined(USE_RANDOM)
+            p += (hash12n(uv + fract(iTime)+0.1)) * stepvec;
+            #endif
+
+
+
+
             OneOverScreenWidth = 1.0/uResolution.x;
             OneOverScreenHeight = 1.0/uResolution.y;
 
@@ -1342,8 +1359,14 @@
 
             float xStep = 0.866 * (OneOverScreenWidth/OneOverScreenHeight);
 
+            #if defined(USE_RANDOM)
+            //float stepvec = 
+            //vTextureCoord += (hash12n(vTextureCoord + fract(uTime)+0.1)) * 
+            #endif
+
             for (int i = 0; i < NUM_SAMPLES; i++) {
                 float ammountBlur = bokehStrength;
+                ammountBlur = 1.0;
                 float stepDistance = (float(i) + 0.5) * OneOverScreenHeight * ammountBlur;
 
                 // Vertical blur

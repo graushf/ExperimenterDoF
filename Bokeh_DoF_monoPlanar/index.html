@@ -553,7 +553,7 @@
                 
                 vec3 smpl = sampletex(p);
                 //color_init = vec3(0.0, 1.0, 0.0);
-                //sumcol += smpl;
+                sumcol += smpl;
                 //if (i == 0) {
                 //    color_init = smpl;
                 //    sumcol += firstSampleWeight*smpl;
@@ -565,17 +565,17 @@
                 //if(i == 8) {
                 //    color_init = smpl;
                 //}
-                float weightSmpl = sampleGaussian(i);
+                //float weightSmpl = sampleGaussian(i);
                 //float weightSmpl = 1.0;
-                sumcol += weightSmpl * smpl;
-                acum += weightSmpl;
+                //sumcol += weightSmpl * smpl;
+                //acum += weightSmpl;
 
-                arraySamples[i].greyval = (smpl.x + smpl.y + smpl.z)/3.0;
-                arraySamples[i].color_rgb = vec3(smpl.x, smpl.y, smpl.z);
+                //arraySamples[i].greyval = (smpl.x + smpl.y + smpl.z)/3.0;
+                //arraySamples[i].color_rgb = vec3(smpl.x, smpl.y, smpl.z);
 
                 p += stepvec;
             }
-            sumcol = medianFilter(arraySamples);
+            //sumcol = medianFilter(arraySamples);
             //sumcol /= float(NUM_SAMPLES);
             //sumcol /= acum;
 
@@ -736,16 +736,17 @@
             {
                 
                 vec3 smpl = sampletex(p);
-                float weightSmpl = sampleGaussian(i);
-                sumcol += weightSmpl*smpl;
-                acum += weightSmpl;
+                //float weightSmpl = sampleGaussian(i);
+                //sumcol += weightSmpl*smpl;
+                sumcol += smpl;
+                //acum += weightSmpl;
 
-                arraySamples[i].greyval = (smpl.x + smpl.y + smpl.z)/3.0;
-                arraySamples[i].color_rgb = vec3(smpl.x, smpl.y, smpl.z);
+                //arraySamples[i].greyval = (smpl.x + smpl.y + smpl.z)/3.0;
+                //arraySamples[i].color_rgb = vec3(smpl.x, smpl.y, smpl.z);
 
                 p += stepvec;
             }
-            sumcol = medianFilter(arraySamples);
+            //sumcol = medianFilter(arraySamples);
             //sumcol /= float(NUM_SAMPLES);
             //sumcol /= acum;
 
@@ -880,17 +881,18 @@
 
             for (int i =0; i<NUM_SAMPLES;++i)
             {
-                float weightSmpl = sampleGaussian(i);
+                //float weightSmpl = sampleGaussian(i);
                 vec3 smpl = texture2D(iChannel0, p).rgb;
-                sumcol += weightSmpl * texture2D(iChannel0, p).rgb;
-                acum += weightSmpl;
+                sumcol += smpl;
+                //sumcol += weightSmpl * texture2D(iChannel0, p).rgb;
+                //acum += weightSmpl;
 
-                arraySamples[i].greyval = (smpl.x + smpl.y + smpl.z)/3.0;
-                arraySamples[i].color_rgb = vec3(smpl.x, smpl.y, smpl.z);
+                //arraySamples[i].greyval = (smpl.x + smpl.y + smpl.z)/3.0;
+                //arraySamples[i].color_rgb = vec3(smpl.x, smpl.y, smpl.z);
 
                 p += stepvec;
             }
-            sumcol = medianFilter(arraySamples);
+            //sumcol = medianFilter(arraySamples);
             //sumcol /= float(NUM_SAMPLES);
             //sumcol /= acum;
 
@@ -1024,17 +1026,18 @@
 
             for (int i=0; i<NUM_SAMPLES;++i)
             {
-                float weightSmpl = sampleGaussian(i);
-                sumcol += weightSmpl * texture2D(iChannel0, p).rgb;
+                //float weightSmpl = sampleGaussian(i);
+                //sumcol += weightSmpl * texture2D(iChannel0, p).rgb;
                 vec3 smpl = texture2D(iChannel0, p).rgb;
-                acum += weightSmpl;
+                sumcol += smpl;
+                //acum += weightSmpl;
 
-                arraySamples[i].greyval = (smpl.x + smpl.y + smpl.z)/3.0;
-                arraySamples[i].color_rgb = vec3(smpl.x, smpl.y, smpl.z);
+                //arraySamples[i].greyval = (smpl.x + smpl.y + smpl.z)/3.0;
+                //arraySamples[i].color_rgb = vec3(smpl.x, smpl.y, smpl.z);
 
                 p += stepvec;
             }
-            sumcol = medianFilter(arraySamples);
+            //sumcol = medianFilter(arraySamples);
             //sumcol /= float(NUM_SAMPLES);
             //sumcol /= acum;
 
@@ -1173,18 +1176,19 @@
 
             for (int i=0; i<NUM_SAMPLES;++i)
             {
-                float weightSmpl = sampleGaussian(i);
-                sumcol += weightSmpl * texture2D( iChannel1, p).rgb;
+                //float weightSmpl = sampleGaussian(i);
+                //sumcol += weightSmpl * texture2D( iChannel1, p).rgb;
                 vec3 smpl = texture2D(iChannel1, p).rgb;
-                acum += weightSmpl;
+                sumcol += smpl;
+                //acum += weightSmpl;
 
-                arraySamples[i].greyval = (smpl.x + smpl.y + smpl.z)/3.0;
-                arraySamples[i].color_rgb = vec3(smpl.x, smpl.y, smpl.z);
+                //arraySamples[i].greyval = (smpl.x + smpl.y + smpl.z)/3.0;
+                //arraySamples[i].color_rgb = vec3(smpl.x, smpl.y, smpl.z);
 
 
                 p += stepvec;
             }
-            sumcol = medianFilter(arraySamples);
+            //sumcol = medianFilter(arraySamples);
             //sumcol /= float(NUM_SAMPLES);
             //sumcol /= acum;
 
