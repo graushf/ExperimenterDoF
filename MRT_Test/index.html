@@ -75,6 +75,8 @@
         varying vec3 vNormal;
         varying vec2 vTextureCoord;
 
+        varying vec3 colorDebug;
+
         uniform vec3 lightPos;
         uniform vec3 viewPos;
         uniform vec3 lightColor;
@@ -122,6 +124,7 @@
         void main()  
         {   
             vec3 result = vec3(1.0, 1.0, 1.0);
+            result = colorDebug;
             if(uDisableLighting == 0) 
             {
                 vec3 norm = normalize(vNormal);
@@ -206,6 +209,8 @@
        varying vec2 vTextureCoord;
        varying vec3 vVertexNormal;
 
+       varying vec3 colorDebug;
+
        uniform mat4 uMMatrix;
        uniform mat4 uVMatrix;
        uniform mat4 uPMatrix;
@@ -216,6 +221,7 @@
             vFragPos = vec3(uMMatrix * vec4(aVertexPosition, 1.0));
             vTextureCoord = aTextureCoord;
             vNormal = aVertexNormal;
+            colorDebug = aVertexPosition;
        }
 
     </script>
@@ -223,13 +229,10 @@
     <script id="mrt-example-vs" type="x-shader/x-vertex">
         attribute vec3 aVertexPosition;
         attribute vec3 aVertexNormal;
-        attribute vec4 aTextureCoord;
-
 
         uniform mat4 uMMatrix;
         uniform mat4 uVMatrix;
         uniform mat4 uPMatrix;
-
 
         uniform vec4 ambient;
         varying vec4 vDest;
@@ -240,14 +243,14 @@
         void main() {
             gl_Position = uPMatrix * uVMatrix * uMMatrix * vec4(aVertexPosition, 1.0);
 
-            vDest = aVertexPosition;
+            vDest = vec4(aVertexPosition, 1.0);
             vColor = ambient;
-            vNormal = aVertexPosition*aVertexPosition;
+            vNormal = aVertexNormal;
             vDepth = gl_Position.z / gl_Position.w;
         }
     </script>
 
-    <script if="mrt-example-fs" type="x-shader/x-fragment">
+    <script id="mrt-example-fs" type="x-shader/x-fragment">
         #extension GL_EXT_draw_buffers : require
 
         precision mediump float;
@@ -258,9 +261,9 @@
         varying float vDepth;
 
         void main(void) {
-            gl_FragData[0] = vDest;
-            gl_FragData[1] = vColor;
-            gl_FragData[2] = vec4((vNormal + 1.0) / 2.0, 1.0);
+            gl_FragData[0] = vec4(0.0, 1.0, 0.0, 1.0);
+            gl_FragData[1] = vec4(1.0, 0.0, 0.0, 1.0);
+            gl_FragData[2] = vec4(0.0, 1.0, 1.0, 1.0)*vec4((vNormal + 1.0) / 2.0, 1.0);
             gl_FragData[3] = vec4(vec3((vDepth + 1.0) / 2.0), 1.0);
         }
     </script>
@@ -270,7 +273,7 @@
 
         uniform sampler2D texture;
 
-        varying vTexCoord;
+        varying vec2 vTexCoord;
 
         void main(void) {
             gl_FragColor = texture2D(texture, vTexCoord);
@@ -2433,8 +2436,8 @@
         var shaderProgramMRT;
         function initShadersMRT()
         {
-            var fragmentShader = getShader(gl, "mrt-example-vs");
-            var vertexShader = getShader(gl, "mrt-example-fs");
+            var fragmentShader = getShader(gl, "mrt-example-fs");
+            var vertexShader = getShader(gl, "mrt-example-vs");
 
             shaderProgramMRT = gl.createProgram();
             gl.attachShader(shaderProgramMRT, vertexShader);
@@ -2444,6 +2447,18 @@
             if(!gl.getProgramParameter(shaderProgramMRT, gl.LINK_STATUS)) {
                 alert("Could not initialise shaders");
             }
+
+
+            shaderProgramMRT.vertexPositionAttribute = gl.getAttribLocation(shaderProgramMRT, "aVertexPosition");
+            gl.enableVertexAttribArray(shaderProgramMRT.vertexPositionAttribute);
+
+            shaderProgramMRT.vertexNormalAttribute = gl.getAttribLocation(
+                shaderProgramMRT, "aVertexNormal");
+            gl.enableVertexAttribArray(shaderProgramMRT.vertexNormalAttribute);
+
+            shaderProgramMRT.pMatrixUniform = gl.getUniformLocation(shaderProgramMRT, "uPMatrix");
+            shaderProgramMRT.modelMatrixUniform = gl.getUniformLocation(shaderProgramMRT, "uMMatrix");
+            shaderProgramMRT.viewMatrixUniform = gl.getUniformLocation(shaderProgramMRT, "uVMatrix");
         }
 
         var shaderProgramPreviewMRT;
@@ -3044,10 +3059,11 @@
 			myCamera = new Camera3D();
 			var aux = vec3.fromValues(-13.34, 30.73, 51.12);
 			myCamera.CameraSetPos(aux, gl.viewportWidth, gl.viewportHeight);
-            var _pos = vec3.fromValues(-9.0000, 15.60, 31.27);
-            var _pitch = 13.75;
-            var _yaw = -90.0;
-            myCamera.SetPositionAndDirectionCamera(_pos, _pitch, _yaw);
+            var _pos = vec3.fromValues(0.0, 0.0, 0.0);
+            //var _pitch = 0.0;
+            //var _yaw = -0.0;
+            myCamera.CameraSetPos(_pos, gl.viewportWidth, gl.viewportHeight);
+            //myCamera.SetPositionAndDirectionCamera(_pos, _pitch, _yaw);
 			lastX = gl.viewportWidth / 2.0;
 			lastY = gl.viewportHeight / 2.0;
 			console.log(myCamera);
@@ -3512,10 +3528,17 @@
                 gl.uniform1f(programShading.farUniform, myCamera.GetFarValue());
             }
             if (programShading == shaderProgramMRT) {
+                //gl.disableVertexAttribArray(shaderProgram.vertexPositionAttribute);
+                //gl.disableVertexAttribArray(shaderProgram.vertexNormalAttribute);
+                //gl.disableVertexAttribArray(shaderProgram.textureCoordAttribute);
+                gl.disableVertexAttribArray(shaderProgram.textureCoordAttribute);
+
                 gl.enableVertexAttribArray(programShading.vertexPositionAttribute);
                 gl.enableVertexAttribArray(programShading.vertexNormalAttribute);
-                gl.enableVertexAttribArray(programShading.textureCoordAttribute);
                 gl.uniform3f(gl.getUniformLocation(programShading, "ambient"), 1.0, 0.0, 0.0);
+
+                gl.bindBuffer(gl.ARRAY_BUFFER, sphereVertexNormalBuffer);
+                gl.vertexAttribPointer(programShading.vertexNormalAttribute, sphereVertexNormalBuffer.itemSize, gl.FLOAT, false, 0, 0);
             }
 
             mat4.identity(mMatrix);
@@ -3536,9 +3559,6 @@
             setMatrixUniforms(programShading);
             gl.drawElements(gl.TRIANGLES, sphereVertexIndexBuffer.numItems, gl.UNSIGNED_SHORT, 0);
         }
-
-
-
 
 
 		function drawScene(programToDraw) {
@@ -3595,7 +3615,7 @@
             //drawSphere(programToDraw, vec3.fromValues(lightPointPos[0], lightPointPos[1], lightPointPos[2]), vec3.fromValues(2.0, 2.0, 2.0));
 
             //drawSphere(programToDraw, vec3.fromValues(0,55,0), vec3.fromValues(2.0, 2.0, 2.0));
-            drawSphere(programToDraw, vec3.fromValues(-8,30,-20), vec3.fromValues(6.0, 6.0, 6.0));
+            drawSphere(programToDraw, vec3.fromValues(0.0, 0.0, 0.0), vec3.fromValues(1.0, 1.0, 1.0));
             //drawSphere(programToDraw, vec3.fromValues(20,30,-40), vec3.fromValues(2.0, 2.0, 2.0));
             //drawSphere(programToDraw, vec3.fromValues(-30,20,-60), vec3.fromValues(2.0, 2.0, 2.0));
             //drawSphere(programToDraw, vec3.fromValues(-50,40,-120), vec3.fromValues(2.0, 2.0, 2.0));
@@ -3918,7 +3938,8 @@
 			//drawSceneDepth();
 			//drawSceneFocalDepth();
 			
-			drawEffects();
+			//drawEffects();
+            drawMRT();
 
 			animate();
 			calculateDeltaTime();
@@ -4373,13 +4394,16 @@
 
         function drawScreenPreviewMRT(i) 
         {
-            gl.useProgram(shaderProgramPreviewMRT);
-
+            gl.disableVertexAttribArray(shaderProgramMRT.vertexPositionAttribute);
+            gl.disableVertexAttribArray(shaderProgramMRT.vertexNormalAttribute);
+            
             shaderProgramPreviewMRT.vertexPositionAttribute = gl.getAttribLocation(shaderProgramPreviewMRT, "position");
+            gl.enableVertexAttribArray(shaderProgramPreviewMRT.vertexPositionAttribute);
             shaderProgramPreviewMRT.textureCoordAttribute = gl.getAttribLocation(shaderProgramPreviewMRT, "texCoord");
+            gl.enableVertexAttribArray(shaderProgramPreviewMRT.textureCoordAttribute);
 
-            shaderProgramPreviewMRT.samplerUniform = gl.getAttribLocation(shaderProgramPreviewMRT, "texture");
-            shaderProgramPreviewMRT.offsetUniform = gl.getAttribLocation(shaderProgramPreviewMRT, "offset");
+            shaderProgramPreviewMRT.samplerUniform = gl.getUniformLocation(shaderProgramPreviewMRT, "texture");
+            shaderProgramPreviewMRT.offsetUniform = gl.getUniformLocation(shaderProgramPreviewMRT, "offset");
 
             gl.disable(gl.DEPTH_TEST);
 
@@ -4388,21 +4412,22 @@
 
             gl.bindBuffer(gl.ARRAY_BUFFER, screenFillingTextureCoordBuffer);
             gl.vertexAttribPointer(shaderProgramPreviewMRT.textureCoordAttribute, screenFillingTextureCoordBuffer.itemSize, gl.FLOAT, false, 0, 0);
-
+            gl.activeTexture(gl.TEXTURE0 + i);
+            gl.bindTexture(gl.TEXTURE_2D, MRTfbData.t[i]);
             gl.uniform1i(shaderProgramPreviewMRT.samplerUniform, i);
 
             var offset = vec3.create();
             if (i == 0) {
-                offset = vec3.fromValues(-0.5, -0.5, 0.0);
+                offset = vec3.fromValues(-1.0, -1.0, 0.0);
             }
             if (i == 1) {
-                offset = vec3.fromValues(-0.5, 0.5, 0.0);
+                offset = vec3.fromValues(-1.0, 1.0, 0.0);
             }
             if (i == 2) {
-                offset = vec3.fromValues(0.5, -0.5, 0.0);
+                offset = vec3.fromValues(1.0, -1.0, 0.0);
             }
             if (i == 3) {
-                offset = vec3.fromValues(0.5, 0.5, 0.0);
+                offset = vec3.fromValues(1.0, 1.0, 0.0);
             }
 
             gl.uniform3f(shaderProgramPreviewMRT.offsetUniform, offset[0], offset[1], offset[2]);
@@ -4424,23 +4449,25 @@
                 ext3.COLOR_ATTACHMENT2_WEBGL,
                 ext3.COLOR_ATTACHMENT3_WEBGL
             ];
-            ext3.drawBufferWEBGL(bufferList);
+            ext3.drawBuffersWEBGL(bufferList);
+
+            gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
 
             gl.useProgram(shaderProgramMRT);
-            drawSphere(shaderProgramMRT);
+            
+            drawSphere(shaderProgramMRT, vec3.fromValues(0.0, 0.0, 0.0), vec3.fromValues(1.0, 1.0, 1.0));
 
             gl.bindFramebuffer(gl.FRAMEBUFFER, null);
             gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
 
-            for (int i = 0; i < 4; ++i) {
-                gl.drawScreenPreviewMRT();    
+            gl.useProgram(shaderProgramPreviewMRT);
+            //gl.disableVertexAttribArray(shaderProgramMRT.aVertexPosition);
+            //gl.disableVertexAttribArray(shaderProgramMRT.aVertexNormal);
+            //gl.disableVertexAttribArray(shaderProgramMRT.aTextureCoord);
+            for (var i = 0; i < 4; ++i) {
+                drawScreenPreviewMRT(i);    
             }
-            
         }
-
-
-
-
 
 		var currentlyPressedKeys = {};
 
@@ -4647,14 +4674,14 @@
 
                 MRTfbData =create_framebuffer_MRT(gl.viewportWidth, gl.viewportHeight);
 
-                gl.activeTexture(gl.TEXTURE0);
-                gl.bindTexture(gl.TEXTURE_2D, MRTfbData.t[0])
-                gl.activeTexture(gl.TEXTURE1);
-                gl.bindTexture(gl.TEXTURE_2D, MRTfbData.t[1])
-                gl.activeTexture(gl.TEXTURE2);
-                gl.bindTexture(gl.TEXTURE_2D, MRTfbData.t[2])
-                gl.activeTexture(gl.TEXTURE3);
-                gl.bindTexture(gl.TEXTURE_2D, MRTfbData.t[3])
+                //gl.activeTexture(gl.TEXTURE0);
+                //gl.bindTexture(gl.TEXTURE_2D, MRTfbData.t[0])
+                //gl.activeTexture(gl.TEXTURE1);
+                //gl.bindTexture(gl.TEXTURE_2D, MRTfbData.t[1])
+                //gl.activeTexture(gl.TEXTURE2);
+                //gl.bindTexture(gl.TEXTURE_2D, MRTfbData.t[2])
+                //gl.activeTexture(gl.TEXTURE3);
+                //gl.bindTexture(gl.TEXTURE_2D, MRTfbData.t[3])
             }
 
         }
@@ -4746,6 +4773,10 @@
 			//loadTeapot();
 
             setupMRT();
+            initShadersMRT();
+            initShadersPreviewMRT();
+
+            
 
 			gl.clearColor(0.0, 0.0, 0.0, 1.0);
 			gl.enable(gl.DEPTH_TEST);
