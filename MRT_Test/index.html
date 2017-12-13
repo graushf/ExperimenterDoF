@@ -4360,7 +4360,6 @@
             gl.drawElements(gl.TRIANGLES, screenFillingIndexBuffer.numItems, gl.UNSIGNED_SHORT, 0);
         }
 
-
         function setupBokehMode(mode) {
             gl.useProgram(shaderProgramBufferA);
             gl.uniform1i(gl.getUniformLocation(shaderProgramBufferA, "uEnableDepthBokeh"), mode);
@@ -4373,9 +4372,6 @@
             gl.useProgram(shaderProgramBufferImage);
             gl.uniform1i(gl.getUniformLocation(shaderProgramBufferImage, "uEnableDepthBokeh"), mode);
         }
-
-
-
 
 		function drawEffects() {
 			gl.bindFramebuffer(gl.FRAMEBUFFER, framebufferSetupSceneRGBA32F);

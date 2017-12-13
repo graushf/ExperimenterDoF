@@ -3532,7 +3532,7 @@
             gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
 
             //drawPlane();
-            drawSphere(programToDraw, vec3.fromValues(-4.3812, 1.7, 0.0), vec3.fromValues(0.2, 0.2, 0.2), vec3.fromValues(10*181/255, 10*134/255, 10*144/255));
+            drawSphere(programToDraw, vec3.fromValues(-4.3812, 1.7, 0.0), vec3.fromValues(0.2, 0.2, 0.2), vec3.fromValues(181/255, 134/255, 144/255));
             drawSphere(programToDraw, vec3.fromValues(-2.8, 3.0, 0.0), vec3.fromValues(0.2, 0.2, 0.2), vec3.fromValues(214/255, 211/255, 218/255));
             drawSphere(programToDraw, vec3.fromValues(-2.2, 2.2, 0.0), vec3.fromValues(0.2, 0.2, 0.2), vec3.fromValues(242/255, 240/255, 241/255));
             drawSphere(programToDraw, vec3.fromValues(0.1531, -0.2861, 0.0), vec3.fromValues(0.2, 0.2, 0.2), vec3.fromValues(57/255, 93/255, 109/255));
@@ -4240,7 +4240,7 @@
             gl.vertexAttribPointer(shaderProgramSecondPassOpBokDiagRight.textureCoordAttribute, screenFillingTextureCoordBuffer.itemSize, gl.FLOAT, false, 0, 0);
 
             gl.activeTexture(gl.TEXTURE0);
-            gl.bindTexture(gl.TEXTURE_2D, textureFramebufferBufferBBokeh);
+            gl.bindTexture(gl.TEXTURE_2D, textureFramebufferBufferDBokeh);
             gl.uniform1i(shaderProgramSecondPassOpBokDiagRight.samplerUniform, 0);
 
             //gl.activeTexture(gl.TEXTURE1);
@@ -4287,7 +4287,7 @@
             gl.uniform1i(shaderProgramBothPassesCombined.samplerUniform, 0);
 
             gl.activeTexture(gl.TEXTURE1);
-            gl.bindTexture(gl.TEXTURE_2D, textureFramebufferBufferCBokeh);
+            gl.bindTexture(gl.TEXTURE_2D, textureFramebufferBufferBBokeh);
             gl.uniform1i(shaderProgramBothPassesCombined.samplerUniform2, 1);
 
             gl.uniform2f(shaderProgramBothPassesCombined.resolutionUniform, gl.viewportWidth, gl.viewportHeight);
@@ -4337,23 +4337,23 @@
 			gl.bindFramebuffer(gl.FRAMEBUFFER, framebufferBufferABokehRGBA32F);
 			gl.viewport(0, 0, gl.viewportWidth, gl.viewportHeight);
 			//drawBufferABokeh();
-            drawBokehFirstPassDiagonalDown();
+            drawBokehSecondPassDiagonalLeft();
 
 
 			gl.bindFramebuffer(gl.FRAMEBUFFER, framebufferBufferBBokehRGBA32F);
 			gl.viewport(0, 0, gl.viewportWidth, gl.viewportHeight);
 			//drawBufferBBokeh();
-            drawBokehFirstPassCombined();
+            drawBokehSecondPassDiagonalRight();
 
 			gl.bindFramebuffer(gl.FRAMEBUFFER, framebufferBufferCBokehRGBA32F);
 			gl.viewport(0, 0, gl.viewportWidth, gl.viewportHeight);
 			//drawBufferCBokeh();
-            drawBokehSecondPassDiagonalLeft();
+            drawBokehSecondPassDiagonalRight();
 
 			gl.bindFramebuffer(gl.FRAMEBUFFER, framebufferBufferDBokehRGBA32F);
 			gl.viewport(0, 0, gl.viewportWidth, gl.viewportHeight);
 			//drawBokehSecondPassDiagonalLeft();
-            drawBokehSecondPassDiagonalRight();
+            drawBokehFirstPassCombined();
             
 
 
@@ -4395,7 +4395,7 @@
             drawScreenTexture(textureFramebufferBufferBBokeh, 1);
 
             gl.viewport(3 * (gl.viewportWidth/4), 0*(gl.viewportHeight/4.0), gl.viewportWidth/4.0, gl.viewportHeight/4.0);
-            drawScreenTexture(textureFramebufferBufferCBokeh, 1);
+            drawScreenTexture(textureFramebufferBufferDBokeh, 1);
 
 
 
