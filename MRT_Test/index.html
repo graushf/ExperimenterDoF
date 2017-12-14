@@ -4408,6 +4408,7 @@
 
             gl.bindBuffer(gl.ARRAY_BUFFER, screenFillingTextureCoordBuffer);
             gl.vertexAttribPointer(shaderProgramPreviewMRT.textureCoordAttribute, screenFillingTextureCoordBuffer.itemSize, gl.FLOAT, false, 0, 0);
+            
             gl.activeTexture(gl.TEXTURE0 + i);
             gl.bindTexture(gl.TEXTURE_2D, MRTfbData.t[i]);
             gl.uniform1i(shaderProgramPreviewMRT.samplerUniform, i);

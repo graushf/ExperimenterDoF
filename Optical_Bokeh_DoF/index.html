@@ -1341,7 +1341,7 @@
 
         varying vec2 vTextureCoord;
 
-        const int NUM_SAMPLES = 64;
+        const int NUM_SAMPLES = 32;
 
         float OneOverScreenWidth;
         float OneOverScreenHeight;
@@ -1561,7 +1561,7 @@
                 float stepDistance = (float(i) + 0.5) * OneOverScreenHeight * ammountBlur;
 
                 // Diagonal blur
-                vec2 step0 = vec2(xStep, 0.5) * stepDistance;
+                vec2 step0 = vec2(xStep, 1.0) * stepDistance;
                 sampleCount0 += GatherAndApply(vTextureCoord + step0, stepDistance, outputColor);
 
             }
@@ -1797,6 +1797,7 @@
             vec4 outputColor = texture2D(uSampler2, vTextureCoord);
 
             gl_FragColor = (2.0*outputColor + outputColor2) / 2.0;
+            gl_FragColor = texture2D(uSampler2, vTextureCoord) +texture2D(uSampler, vTextureCoord);
         }
 
         float GatherAndApply(vec2 uv, float stepDistance, inout vec4 outColor) {
@@ -4364,9 +4365,8 @@
 			//drawScreenFillingTextureBokeh();
             //drawScreenTexture(textureAuxFramebuffer, 0); // BUENA
             //drawScreenTexture(textureFramebufferSetupScene, 0);
+            
             drawBokehPassesCombined();
-
-
 
             //gl.bindFramebuffer(gl.FRAMEBUFFER, null);
 
@@ -4395,7 +4395,8 @@
             drawScreenTexture(textureFramebufferBufferBBokeh, 1);
 
             gl.viewport(3 * (gl.viewportWidth/4), 0*(gl.viewportHeight/4.0), gl.viewportWidth/4.0, gl.viewportHeight/4.0);
-            drawScreenTexture(textureFramebufferBufferCBokeh, 1);
+            //drawScreenTexture(textureFramebufferBufferCBokeh, 1);
+            drawScreenTexture(textureFramebufferBufferDBokeh, 1);
 
 
 

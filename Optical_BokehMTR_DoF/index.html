@@ -10,64 +10,6 @@
 	<script type="text/javascript" src="gl-matrix-test.js"></script>
     <script type="text/javascript" src="basicSceneObjects.js"></script>
 
-	<script id="per-fragment-lighting-fs" type="x-shader/x-fragment">
-		precision mediump float;
-
-		varying vec2 vTextureCoord;
-		varying vec3 vTransformedNormal;
-		varying vec4 vPosition;
-
-		uniform float uMaterialShininess;
-
-		uniform bool uShowSpecularHighlights;
-		uniform bool uUseLighting;
-		uniform int uUseTextures;
-
-		uniform vec3 uAmbientColor;
-
-		uniform vec3 uPointLightingLocation;
-		uniform vec3 uPointLightingSpecularColor;
-		uniform vec3 uPointLightingDiffuseColor;
-
-		uniform sampler2D uSampler;
-
-		void main(void) {
-			bool i = true;
-
-			vec3 lightWeighting;
-			if (!uUseLighting) {
-				lightWeighting = vec3(1.0, 1.0, 1.0);
-			} else {
-				vec3 lightDirection = normalize(uPointLightingLocation - vPosition.xyz);
-				vec3 normal = normalize(vTransformedNormal);
-
-				float specularLightWeighting = 0.0;
-				if( uShowSpecularHighlights ) {
-					vec3 eyeDirection = normalize(-vPosition.xyz);
-					vec3 reflectionDirection = reflect(-lightDirection, normal);
-
-					specularLightWeighting = pow(max(dot(reflectionDirection, eyeDirection), 0.0), uMaterialShininess);
-				}
-
-				float diffuseLightWeighting = max(dot(normal, lightDirection), 0.0);
-				lightWeighting = uAmbientColor + uPointLightingSpecularColor * specularLightWeighting + uPointLightingDiffuseColor * diffuseLightWeighting;
-			}
-
-			vec4 fragmentColor;
-			if (uUseTextures == 1) {
-				//gl_FragColor = vec4(1.0, 0.0, 0.0, 1.0); return;
-				fragmentColor = texture2D(uSampler, vec2(vTextureCoord.s, vTextureCoord.t));
-			} else {
-				//gl_FragColor = vec4(0.5, 0.5, 1.0, 1.0); return;
-				fragmentColor = vec4(1.0, 1.0, 1.0, 1.0);
-			}
-			gl_FragColor = vec4(fragmentColor.rgb * 3.0* lightWeighting, fragmentColor.a);
-
-            //gl_FragColor = vec4(vTextureCoord, 0.0, 1.0); return;
-            //gl_FragColor = vec4(fragmentColor.rgb, fragmentColor.a); return;
-		}
-	</script>
-
     <script id="lighting-phong-fs" type="x-shader/x-fragment">
         precision mediump float;
 
@@ -199,31 +141,6 @@
         }
     </script>
 
-    <script id="hdr-color-fs" type="x-shader/x-fragment">
-        precision mediump float;
-
-        uniform vec3 color;
-
-        void main(void) {
-            gl_FragColor = vec4(color, 1.0);
-        }
-
-    </script>
-
-    <script id="hdr-color-vs" type="x-shader/x-vertex">
-        attribute vec3 aVertexPosition;
-        attribute vec3 aVertexNormal;
-        attribute vec2 aTextureCoord;
-
-        uniform mat4 uMMatrix;
-        uniform mat4 uVMatrix;
-        uniform mat4 uPMatrix;
-
-        void main(void) {
-            gl_Position = uPMatrix * uVMatrix * uMMatrix * vec4(aVertexPosition, 1.0);
-        }
-    </script>
-
     <script id="lighting-phong-vs" type="x-shader/x-vertex">
        attribute vec3 aVertexPosition;
        attribute vec3 aVertexNormal;
@@ -247,30 +164,6 @@
        }
 
     </script>
-
-	<script id="per-fragment-lighting-vs" type="x-shader/x-vertex">
-		attribute vec3 aVertexPosition;
-		attribute vec3 aVertexNormal;
-		attribute vec2 aTextureCoord;
-
-		uniform mat4 uMMatrix;
-		uniform mat4 uVMatrix;
-		uniform mat4 uPMatrix;
-		uniform mat3 uNMatrix;
-
-		varying vec2 vTextureCoord;
-		varying vec3 vTransformedNormal;
-		varying vec4 vPosition;
-
-		void main(void) {
-			vPosition = uVMatrix * uMMatrix * vec4(aVertexPosition, 1.0);
-			gl_Position = uPMatrix * vPosition;
-
-			//gl_Position = vec4(aVertexPosition, 1.0);
-			vTextureCoord = aTextureCoord;
-			vTransformedNormal = uNMatrix * aVertexNormal;
-		}
-	</script>
 
 	<script id="fragment-focal-plane-fs" type="x-shader/x-fragment">
 		precision mediump float;
@@ -407,71 +300,8 @@
         }
     </script>
 
-    <script id="opticaldof-fs" type="x-shader/x-fragment">
-        precision mediump float;
-
-        #define M_PI 3.1415926535897932384626433832795
-
-        #define NUM_SAMPLES 16;
-
-        uniform sampler2D colorChannel;
-        uniform sampler2D depthChannel;
-
-        uniform uApertureCoefficient;
-        uniform float uScreenPos;
-        uniform float uFocalLen
-        uniform uCoefficientStrenghOffset;
-
-        varying vec2 vTextureCoord;
-
-        vec3 UniformDistribution(float CoC_diameter) {
-            float r = CoC_diameter/2.0;
-            float a = M_PI * pow(r,2);
-
-            float offset = r / uCoefficientStrenghOffset;
-
-            float stepSize = (2 * r) / NUM_SAMPLES;
-
-            vec2 sampleStepping = vec2((-NUM_SAMPLES/2.0)*stepSize);
-
-            vec3 intensity = vec3(texture2D(colorChannel, vTextureCoord));
-
-            // for (int i = 0; i > NUM_SAMPLES; i++) 
-            // {
-
-            // }
-
-            for ()
-        }
-
-
-        void main(void) {
-            float pixelDepth = vec3(texture2D(depthChannel, vTextureCoord)).x;
-
-            float CoC_diameter = abs(uApertureCoefficient * (uScreenPos * (1.0/uFocalLen - 1.0/pixelDepth) - 1));
-            
-            colorOutput = UniformDistribution(CoC_diameter);
-
-            gl_FragColor = vec4(colorOutput, 1.0);
-        }
-
-    </script>
-
-    <script id="opticaldof-vs" type="x-shader/x-vertex">
-        attribute vec3 aVertexPosition;
-        attribute vec2 aTextureCoord;
-
-        varying vec2 vTextureCoord;
-
-        void main(void) {
-            vTextureCoord = aTextureCoord;
-            gl_Position = vec4(aVertexPosition, 1.0);
-        }
-    </script>
-
     <script id="debug-shader-fs" type="x-shader/x-fragment">
         precision mediump float;
-
 
         varying vec3 vTransformedNormal;
         varying vec4 vPosition;
@@ -479,7 +309,6 @@
         void main(void) {
             gl_FragColor = vec4(1.0, 0.0, 0.0, 1.0);
         }
-
     </script>
 
     <script id="debug-shader-vs" type="x-shader/x-vertex">
@@ -499,1333 +328,9 @@
             gl_Position = uPMatrix * vPosition;
             vTransformedNormal = uNMatrix * aVertexNormal;
         }
-
     </script>
 
-	<script id="shader-fs-bokeh-BufferA" type="x-shader/x-fragment">
-        precision mediump float;
-
-        //screen filling texture
-        uniform sampler2D uSampler;
-
-        uniform sampler2D uSamplerFocalDepth;
-
-        uniform float bokehStrength;
-
-        varying vec2 vTextureCoord;
-
-        #define M_PI 3.1415926535897932384626433832795
-
-        #define USE_RANDOM
-
-        const vec2 blurdir = vec2(0.0, 1.0);
-        // ===
-        const float blurdist_px = 64.0;
-        const int NUM_SAMPLES = 16;
-
-        const float THRESHOLD = 0.1;
-        const float MULT = 2.0;
-
-        uniform vec3 iResolution; // The viewport resolution (z is pixel aspect ratio, usually 1.0)
-        uniform float iTime; // Current time in seconds
-
-        uniform int uEnableDepthBokeh;
-
-        struct MedianStruct 
-        {
-            float greyval;
-            vec3 color_rgb;
-        };
-
-        //#define GAMMA_SRGB
-        #if defined( GAMMA_SRGB )
-        // see http://www.opengl.org/registry/specs/ARB/framebuffer_sRGB.txt
-        vec3 srgb2lin( vec3 cs )
-        {
-            vec3 c_lo = cs / 12.92;
-            vec3 c_hi = pow( (cs + 0.055) / 1.055, vec3(2.4) );
-            vec3 s = step(vec3(0.04045), cs);
-            return mix( c_lo, c_hi, s );
-        }
-
-        vec3 lin2srgb( vec3 cl )
-        {
-            // cl = clamp( cl, 0.0, 1.0 );
-            vec3 c_lo = 12.92 * cl;
-            vec3 c_hi = 1.055 * pow(cl, vec3(0.41666)) - 0.055;
-            vec3 s = step( vec3(0.0031308), cl );
-            return mix( c_lo, c_hi, s );
-        }
-        #else 
-        vec3 srgb2lin(vec3 c) { return c*c; }
-        vec3 lin2srgb(vec3 c) { return sqrt(c); }
-        #endif // GAMMA_SRGB
-
-        // note: uniform pdf ranf [0;1[
-        float hash12n(vec2 p) 
-        {
-            p = fract(p * vec2(5.3987, 5.4421));
-            p += dot(p.yx, p.xy + vec2(21.5351, 14.3137));
-            return fract(p.x * p.y * 95.4307);
-        }
-
-        vec4 pattern( vec2 p )
-        {
-            float aspect = iResolution.x/iResolution.y;
-            float p0 = step(abs(p.x - 0.125), 0.01) * step(abs(p.y - 0.27), 0.01);
-            float p1 = step( length( p - vec2(0.125, 0.45) ), 0.025 );
-
-            float p2_0 = step( length(p - vec2(0.08, 0.14) ), 0.0125 );
-            float p2_1 = step( length(p - vec2(0.16, 0.125) ), 0.0125);
-            float p2_2 = step( length(p - vec2(0.1, 0.07) ), 0.0125 );
-            float p2 = max(p2_0, max(p2_1, p2_2));
-
-            return vec4( max(p0, max(p1, p2) ) );
-        }
-
-        vec3 sampletex( vec2 uv ) 
-        {
-            //return srgb2lin( texture2D(uSampler, uv, -10.0).rgb );
-            return texture2D(uSampler, uv).rgb;
-        }
-
-        float sampleGaussian(int samplepoint) {
-            int smplGaussian = samplepoint / (NUM_SAMPLES);
-            float weight = (1.0 / sqrt(2.0*M_PI)) * exp(-1.0*pow(float(smplGaussian), 2.0) / 2.0);
-            return weight;
-        }
-
-        void interchangesort(inout MedianStruct arraySamples[NUM_SAMPLES]) {
-            const int lengthOfArray = NUM_SAMPLES;
-            // we use an anidated loop
-            for (int i = 0; i < lengthOfArray; i++) {
-                for (int j = 0; j < lengthOfArray; j++) {
-                    if (arraySamples[i].greyval > arraySamples[j].greyval) {
-                        // Interchange of values
-                        MedianStruct auxvar = arraySamples[i];
-                        arraySamples[i] = arraySamples[j];
-                        arraySamples[j] = auxvar;
-                    }
-                }
-            }
-        }
-
-        vec3 medianFilter(MedianStruct arraySamples[NUM_SAMPLES]) {
-             interchangesort(arraySamples);
-             const int i = 15;
-             const int medianPositionFilter = int(NUM_SAMPLES / 2);
-             return (arraySamples[medianPositionFilter].color_rgb);
-             //return(vec3(1.0, 0.0, 0.0));
-        }
-
-
-        void main(void) {
-            vec2 blurvec = normalize(blurdir) / iResolution.xy;
-            vec2 uv = gl_FragCoord.xy / iResolution.xy;
-
-
-            float paramBokehQuantity = 0.0;
-            if (uEnableDepthBokeh == 0) 
-            {
-                //paramBokehQuantity = (0.55 + 0.45 * sin(5.0 * uv.x + iTime ) );    
-                paramBokehQuantity = 1.0;
-            } else {
-                paramBokehQuantity = texture2D(uSamplerFocalDepth, vTextureCoord).x;  
-            }
-            
-            float ammountBlur = bokehStrength * paramBokehQuantity;
-            
-
-            //ammountBlur = bokehStrength;
-            float blurdist = blurdist_px * ammountBlur;
-
-            vec2 p0 = uv;
-            vec2 p1 = uv + blurdist * blurvec;
-            vec2 stepvec = (p1-p0) / float(NUM_SAMPLES);
-            vec2 p = p0;
-
-            #if defined(USE_RANDOM)
-            p +=  (hash12n(uv + fract(iTime)+0.1)) * stepvec;
-            #endif
-
-            vec3 sumcol = vec3(0.0);
-            float firstSampleWeight = 0.5;
-            float restOfSamplesWeights = (1.0 - firstSampleWeight)/float(NUM_SAMPLES);
-
-            //firstSampleWeight = 1.0 / (float(NUM_SAMPLES)*1.0);
-            //restOfSamplesWeights = firstSampleWeight;
-            //vec3 color_init = vec3(0.0, 1.0, 0.0);
-            //float acum = 0.0;
-            //MedianStruct arraySamples[NUM_SAMPLES];
-
-            for (int i=0; i < NUM_SAMPLES; ++i)
-            {
-                
-                vec3 smpl = sampletex(p);
-                //color_init = vec3(0.0, 1.0, 0.0);
-                //sumcol += smpl;
-                //if (i == 0) {
-                //    color_init = smpl;
-                //    sumcol += firstSampleWeight*smpl;
-                //}
-                //if (i > 0) {
-                //    sumcol += restOfSamplesWeights*smpl;
-                //}
-
-                //if(i == 8) {
-                //    color_init = smpl;
-                //}
-                //float weightSmpl = sampleGaussian(i);
-                float weightSmpl = 1.0;
-                sumcol += weightSmpl * smpl;
-                //acum += weightSmpl;
-
-                //arraySamples[i].greyval = (smpl.x + smpl.y + smpl.z)/3.0;
-                //arraySamples[i].color_rgb = vec3(smpl.x, smpl.y, smpl.z);
-
-                p += stepvec;
-            }
-            //sumcol = medianFilter(arraySamples);
-            sumcol /= float(NUM_SAMPLES);
-            //sumcol /= acum;
-
-            //gl_FragColor = vec4( lin2srgb(sumcol * MULT), 1.0);
-            //gl_FragColor = vec4(color_init, 1.0); return;
-            gl_FragColor = vec4( sumcol, 1.0);
-        }
-    </script>
-
-    <script id="shader-fs-bokeh-BufferB" type="x-shader/x-fragment">
-        precision mediump float;
-
-        // screen filling texture
-        uniform sampler2D uSampler;
-        uniform sampler2D uSamplerFocalDepth;
-
-        uniform float bokehStrength;
-
-        varying vec2 vTextureCoord;
-
-        #define M_PI 3.1415926535897932384626433832795
-        #define USE_RANDOM
-
-        const vec2 blurdir = vec2( 1.0, -0.577350269189626 );
-
-        // ===
-
-        const float blurdist_px = 64.0;
-        const int NUM_SAMPLES = 16;
-
-        const float MULT = 2.0;
-
-        uniform vec3 iResolution; // The viewport resolution (z is pixel aspect ratio, usually 1.0)
-        uniform float iTime;    // Current time in seconds
-
-        uniform int uEnableDepthBokeh;
-
-        struct MedianStruct 
-        {
-            float greyval;
-            vec3 color_rgb;
-        };
-
-        //#define GAMMA_SRGB
-        #if defined( GAMMA_SRGB )
-        vec3 srgb2lin( vec3 cs )
-        {
-            vec3 c_lo = cs / 12.92;
-            vec3 c_hi = pow( (cs + 0.055) / 1.055, vec3(2.4) );
-            vec3 s = step(vec3(0.04045), cs);
-            return mix( c_lo, c_hi, s );
-        }
-        vec3 lin2srgb( vec3 cl )
-        {
-            //cl = clamp(cl, 0.0, 1.0);
-            vec3 c_lo = 12.92 * cl;
-            vec3 c_hi = 1.055 * pow(cl, vec3(0.41666)) - 0.055;
-            vec3 s = step( vec3(0.0031308), cl);
-            return mix( c_lo, c_hi, s);
-        }
-        #else
-        vec3 srgb2lin(vec3 c) { return c*c; }
-        vec3 lin2srgb(vec3 c) { return sqrt(c); }
-        #endif //GAMMA_SRGB
-
-        //note uniform pdf rand [0;1[
-        float hash12n(vec2 p)
-        {
-            p = fract(p * vec2(5.3987, 5.4421));
-            p += dot(p.yx, p.xy + vec2(21.5351, 14.3137));
-            return fract(p.x * p.y * 95.4307);
-        }
-
-        vec4 pattern( vec2 p )
-        {
-            float aspect = iResolution.x/iResolution.y;
-            float p0 = step(abs(p.x - 0.125), 0.01) * step(abs(p.y - 0.27), 0.01);
-            float p1 = step( length( p - vec2(0.125, 0.45) ), 0.025 );
-
-            float p2_0 = step( length( p - vec2(0.08, 0.14) ), 0.0125);
-            float p2_1 = step( length( p-vec2(0.16, 0.125) ), 0.0125);
-            float p2_2 = step( length( p-vec2(0.1, 0.07) ), 0.0125);
-            float p2 = max(p2_0, max(p2_1, p2_2));
-
-            return vec4( max( p0, max(p1, p2) ) );
-        }
-
-        vec3 sampletex( vec2 uv )
-        {
-            return texture2D(uSampler, uv).rgb;
-        }
-
-        float sampleGaussian(int samplepoint) {
-            int smplGaussian = samplepoint / (NUM_SAMPLES);
-            float weight = (1.0 / sqrt(2.0*M_PI)) * exp(-1.0*pow(float(smplGaussian), 2.0) / 2.0);
-            return weight;
-        }
-
-        void interchangesort(inout MedianStruct arraySamples[NUM_SAMPLES]) {
-            const int lengthOfArray = NUM_SAMPLES;
-            // we use an anidated loop
-            for (int i = 0; i < lengthOfArray; i++) {
-                for (int j = 0; j < lengthOfArray; j++) {
-                    if (arraySamples[i].greyval > arraySamples[j].greyval) {
-                        // Interchange of values
-                        MedianStruct auxvar = arraySamples[i];
-                        arraySamples[i] = arraySamples[j];
-                        arraySamples[j] = auxvar;
-                    }
-                }
-            }
-        }
-
-        vec3 medianFilter(MedianStruct arraySamples[NUM_SAMPLES]) {
-             interchangesort(arraySamples);
-             const int i = 15;
-             const int medianPositionFilter = int(NUM_SAMPLES / 2);
-             return (arraySamples[medianPositionFilter].color_rgb);
-        }
-
-
-        void main(void) {
-            vec2 blurvec = normalize(blurdir) / iResolution.xy;
-            vec2 uv = gl_FragCoord.xy / iResolution.xy;
-
-            float paramBokehQuantity = 0.0;
-            if (uEnableDepthBokeh == 0) 
-            {
-                //paramBokehQuantity = ( 0.55 + 0.45 * sin( 5.0 * uv.x + iTime ) );
-                paramBokehQuantity = 1.0;
-            } else {
-                paramBokehQuantity = texture2D(uSamplerFocalDepth, vTextureCoord).x;
-            }
-
-            float ammountBlur = bokehStrength * paramBokehQuantity;
-            
-            float blurdist = blurdist_px * ammountBlur;
-
-            vec2 p0 = uv;
-            vec2 p1 = uv + blurdist * blurvec;
-            vec2 stepvec = (p1-p0) / float(NUM_SAMPLES);
-            vec2 p = p0;
-
-            #if defined(USE_RANDOM)
-            p += (hash12n(uv+fract(iTime)+0.1)) * stepvec;
-            #endif
-
-            vec3 sumcol = vec3(0.0);
-            float firstSampleWeight = 0.3;
-            float restOfSampleWeights = (1.0 - firstSampleWeight)/float(NUM_SAMPLES);
-
-            firstSampleWeight = 1.0 / (float(NUM_SAMPLES)*0.4);
-            restOfSampleWeights = firstSampleWeight;
-            //float acum = 0.0;
-            //MedianStruct arraySamples[NUM_SAMPLES];
-
-            for (int i=0; i<NUM_SAMPLES;++i)
-            {
-                
-                vec3 smpl = sampletex(p);
-                float weightSmpl = sampleGaussian(i);
-                weightSmpl = 1.0;
-                sumcol += weightSmpl*smpl;
-                //acum += weightSmpl;
-
-                //arraySamples[i].greyval = (smpl.x + smpl.y + smpl.z)/3.0;
-                //arraySamples[i].color_rgb = vec3(smpl.x, smpl.y, smpl.z);
-
-                p += stepvec;
-            }
-            //sumcol = medianFilter(arraySamples);
-            sumcol /= float(NUM_SAMPLES);
-            //sumcol /= acum;
-
-            gl_FragColor = vec4( sumcol, 1.0 );
-        }
-    </script>
-
-    <script id="shader-fs-bokeh-BufferC" type="x-shader/x-fragment">
-        precision mediump float;
-
-        uniform sampler2D iChannel0;
-        uniform sampler2D uSamplerFocalDepth;
-
-        uniform float bokehStrength;
-
-        varying vec2 vTextureCoord;
-
-        #define M_PI 3.1415926535897932384626433832795
-        #define USE_RANDOM
-
-        const vec2 blurdir = vec2( -1.0, -0.577350269189626 );
-
-        // ===
-        const float blurdist_px = 64.0;
-        const int NUM_SAMPLES = 16;
-
-        uniform vec3 iResolution;
-        uniform float iTime;
-
-        uniform int uEnableDepthBokeh;
-
-        struct MedianStruct 
-        {
-            float greyval;
-            vec3 color_rgb;
-        };
-
-        //#define GAMMA_SRGB
-        #if defined ( GAMMA_SRGB )
-
-        vec3 srgb2lin( vec3 cs )
-        {
-            vec3 c_lo = cs / 12.92;
-            vec3 c_hi = pow( (cs + 0.055) / 1.055, vec3(2.4) );
-            vec3 s = step(vec3(0.04045), cs);
-            return mix( c_lo, c_hi, s);
-        }
-
-        vec3 lin2srgb( vec3 cl )
-        {
-            //cl = clamp( cl, 0.0, 1.0 );
-            vec3 c_lo = 12.92 * cl;
-            vec3 c_hi = 1.055 * pow(cl, vec3(0.41666)) - 0.055;
-            vec3 s = step(vec3(0.0031308), cl);
-            return mix( c_lo, c_hi, s);
-        }
-        #else
-        vec3 srgb2lin(vec3 c) { return c*c; }
-        vec3 lin2srgb(vec3 c) { return sqrt(c); }
-        #endif //GAMMA_SRGB
-
-        //note: uniform pdf rand [0;1[
-        float hash12n(vec2 p)
-        {
-            p = fract(p * vec2(5.3987, 5.4421));
-            p += dot(p.yx, p.xy + vec2(21.5351, 14.3137));
-            return fract(p.x * p.y * 95.4307);
-        }
-
-        float sampleGaussian(int samplepoint) {
-            int smplGaussian = samplepoint / (NUM_SAMPLES);
-            float weight = (1.0 / sqrt(2.0*M_PI)) * exp(-1.0*pow(float(smplGaussian), 2.0) / 2.0);
-            return weight;
-        }
-
-        void interchangesort(inout MedianStruct arraySamples[NUM_SAMPLES]) {
-            const int lengthOfArray = NUM_SAMPLES;
-            // we use an anidated loop
-            for (int i = 0; i < lengthOfArray; i++) {
-                for (int j = 0; j < lengthOfArray; j++) {
-                    if (arraySamples[i].greyval > arraySamples[j].greyval) {
-                        // Interchange of values
-                        MedianStruct auxvar = arraySamples[i];
-                        arraySamples[i] = arraySamples[j];
-                        arraySamples[j] = auxvar;
-                    }
-                }
-            }
-        }
-
-        vec3 medianFilter(MedianStruct arraySamples[NUM_SAMPLES]) {
-             interchangesort(arraySamples);
-             const int i = 15;
-             const int medianPositionFilter = int(NUM_SAMPLES / 2);
-             return (arraySamples[medianPositionFilter].color_rgb);
-             //return(vec3(1.0, 0.0, 0.0));
-        }
-
-        void main()
-        {
-            vec2 blurvec = normalize(blurdir) / iResolution.xy;
-            vec2 uv = gl_FragCoord.xy / iResolution.xy;            
-
-            float paramBokehQuantity = 0.0;
-            if (uEnableDepthBokeh == 0) 
-            {
-                //paramBokehQuantity = (0.55 + 0.45 * sin( 5.0 * uv.x + iTime ) );
-                paramBokehQuantity = 1.0;
-            } else {
-                paramBokehQuantity = texture2D(uSamplerFocalDepth, vTextureCoord).x;
-            }
-
-            float ammountBlur = bokehStrength * paramBokehQuantity;
-            
-            float blurdist = blurdist_px * ammountBlur;
-
-            vec2 p0 = uv;
-            vec2 p1 = uv + blurdist * blurvec;
-            vec2 stepvec = (p1-p0) / float(NUM_SAMPLES);
-            vec2 p = p0;
-            #if defined(USE_RANDOM)
-            p += (hash12n(uv+fract(iTime)+0.3)) * stepvec;
-            #endif
-
-            vec3 sumcol = vec3(0.0);
-
-            float firstSampleWeight = 1.0 / (float(NUM_SAMPLES)*0.4);
-            float restOfSampleWeights = firstSampleWeight;
-
-            //float acum = 0.0;
-            //MedianStruct arraySamples[NUM_SAMPLES];
-
-            for (int i =0; i<NUM_SAMPLES;++i)
-            {
-                float weightSmpl = sampleGaussian(i);
-                weightSmpl = 1.0;
-                vec3 smpl = texture2D(iChannel0, p).rgb;
-                sumcol += weightSmpl * texture2D(iChannel0, p).rgb;
-                //acum += weightSmpl;
-
-                //arraySamples[i].greyval = (smpl.x + smpl.y + smpl.z)/3.0;
-                //arraySamples[i].color_rgb = vec3(smpl.x, smpl.y, smpl.z);
-
-                p += stepvec;
-            }
-            //sumcol = medianFilter(arraySamples);
-            sumcol /= float(NUM_SAMPLES);
-            //sumcol /= acum;
-
-            gl_FragColor = vec4(sumcol, 1.0);
-
-        }
-
-    </script>
-
-    <script id="shader-fs-bokeh-BufferD" type="x-shader/x-fragment">
-        precision mediump float;
-
-        uniform sampler2D iChannel0;
-        uniform sampler2D uSamplerFocalDepth;
-
-        uniform float bokehStrength;
-
-        uniform int uEnableDepthBokeh;
-
-        varying vec2 vTextureCoord;
-
-        #define M_PI 3.1415926535897932384626433832795
-        #define USE_RANDOM
-
-        const vec2 blurdir = vec2(1.0, -0.577350269189626 );
-        // ====
-
-        const float blurdist_px = 64.0;
-        const int NUM_SAMPLES = 16;
-
-        uniform vec3 iResolution;
-        uniform float iTime;
-
-        struct MedianStruct 
-        {
-            float greyval;
-            vec3 color_rgb;
-        };
-
-        //#define GAMMA_SRGB
-        #if defined (GAMMA_SRGB)
-        vec3 srgb2lin( vec3 cs )
-        {
-            vec3 c_lo = cs / 12.92;
-            vec3 c_hi = pow( (cs + 0.055) / 1.055, vec3(2.4));
-            vec3 s = step(vec3(0.04045), cs);
-            return mix( c_lo, c_hi, s);
-        }
-        vec3 lin2srgb( vec3 cl )
-        {
-            //cl = clamp( cl, 0.0, 1.0);
-            vec3 c_lo = 12.92 * cl;
-            vec3 c_hi = 1.055 * pow(cl, vec3(0.41666)) - 0.055;
-            vec3 s = step( vec3(0.0031308), cl);
-            return mix( c_lo, c_hi, s);
-        }
-        #else 
-        vec3 srgb2lin(vec3 c) { return c*c; }
-        vec3 lin2srgb(vec3 c) { return sqrt(c); }
-        #endif //GAMMA_RGB
-
-        //note:uniform pdf rand [0:1[
-        float hash12n(vec2 p)
-        {
-            p = fract(p * vec2(5.3987, 5.4421));
-            p += dot(p.yx, p.xy + vec2(21.5351, 14.3137));
-            return fract(p.x * p.y * 95.4307);
-        }
-
-        float sampleGaussian(int samplepoint) {
-            int smplGaussian = samplepoint / (NUM_SAMPLES);
-            float weight = (1.0 / sqrt(2.0*M_PI)) * exp(-1.0*pow(float(smplGaussian), 2.0) / 2.0);
-            return weight;
-        }
-
-        void interchangesort(inout MedianStruct arraySamples[NUM_SAMPLES]) {
-            const int lengthOfArray = NUM_SAMPLES;
-            // we use an anidated loop
-            for (int i = 0; i < lengthOfArray; i++) {
-                for (int j = 0; j < lengthOfArray; j++) {
-                    if (arraySamples[i].greyval > arraySamples[j].greyval) {
-                        // Interchange of values
-                        MedianStruct auxvar = arraySamples[i];
-                        arraySamples[i] = arraySamples[j];
-                        arraySamples[j] = auxvar;
-                    }
-                }
-            }
-        }
-
-        vec3 medianFilter(MedianStruct arraySamples[NUM_SAMPLES]) {
-             interchangesort(arraySamples);
-             const int i = 15;
-             const int medianPositionFilter = int(NUM_SAMPLES / 2);
-             return (arraySamples[medianPositionFilter].color_rgb);
-        }
-
-        void main()
-        {
-
-            vec2 blurvec = normalize(blurdir) / iResolution.xy;
-            vec2 uv = gl_FragCoord.xy / iResolution.xy;
-            
-            float paramBokehQuantity = 0.0;
-            if (uEnableDepthBokeh == 0)
-            {
-                //paramBokehQuantity = ( 0.55 + 0.45 * sin( 5.0 * uv.x + iTime ) );
-                paramBokehQuantity = 1.0;
-            } else {
-                paramBokehQuantity = texture2D(uSamplerFocalDepth, vTextureCoord).x;
-            }
-
-            float ammountBlur = bokehStrength * paramBokehQuantity;
-
-            float blurdist = blurdist_px * ammountBlur;
-
-            vec2 p0 = uv;
-            vec2 p1 = uv + blurdist * blurvec;
-            vec2 stepvec = (p1-p0) / float(NUM_SAMPLES);
-            vec2 p = p0;
-            #if defined (USE_RANDOM)
-            p += (hash12n(uv+fract(iTime)+0.4)) * stepvec;
-            #endif
-
-            vec3 sumcol = vec3(0.0);
-            float firstSampleWeight = 1.0 / (float(NUM_SAMPLES)*0.4);
-            float restOfSampleWeights = firstSampleWeight;
-
-            //float acum = 0.0;
-            //MedianStruct arraySamples[NUM_SAMPLES];
-
-            for (int i=0; i<NUM_SAMPLES;++i)
-            {
-                float weightSmpl = sampleGaussian(i);
-                weightSmpl = 1.0;
-                sumcol += weightSmpl * texture2D(iChannel0, p).rgb;
-                //vec3 smpl = texture2D(iChannel0, p).rgb;
-                //acum += weightSmpl;
-
-                //arraySamples[i].greyval = (smpl.x + smpl.y + smpl.z)/3.0;
-                //arraySamples[i].color_rgb = vec3(smpl.x, smpl.y, smpl.z);
-
-                p += stepvec;
-            }
-            //sumcol = medianFilter(arraySamples);
-            sumcol /= float(NUM_SAMPLES);
-            //sumcol /= acum;
-
-            gl_FragColor = vec4( sumcol, 1.0);
-        }
-    </script>
-
-
-	<script id="shader-fs-bokeh-Image" type="x-shader/x-fragment">
-        precision mediump float;
-
-        //screen filling texture
-        uniform sampler2D iChannel0;
-        uniform sampler2D iChannel1;
-        uniform sampler2D iChannel2;
-        uniform sampler2D iChannel3;
-
-        uniform sampler2D uSamplerFocalDepth;
-
-        uniform float bokehStrength;
-
-        uniform int uEnableDepthBokeh;
-
-        varying vec2 vTextureCoord;
-
-        uniform vec3 iResolution; // The viewport resolution (z is pixel aspect ratio, usually 1.0)
-        uniform float iTime; // Current time in seconds
-
-        #define M_PI 3.1415926535897932384626433832795
-        #define USE_RANDOM
-
-        struct MedianStruct 
-        {
-            float greyval;
-            vec3 color_rgb;
-        };
-
-        const vec2 blurdir = vec2( -1.0, -0.577350269189626);
-        // ===
-        const float blurdist_px = 64.0;
-        const int NUM_SAMPLES = 16;
-
-        //#define GAMMA_SRGB
-        #if defined (GAMMA_SRGB )
-
-        vec3 srgb2lin( vec cs )
-        {
-            vec3 c_lo = cs  12.92;
-            vec3 c_hi = pow( (cs + 0.055) / 1.055, vec3(2.4) );
-            vec3 s = step(vec3(0.04045), cs);
-            return mix( c_lo, c_hi, s );
-        }
-
-        vec3 lin2srgb( vec3 cl )
-        {
-            // cl = clamp(cl, 0.0, 1.0);
-            vec3 c_lo = 12.92 * cl;
-            vec3 c_hi = 1.055 * pow(cl, vec3(0.4166)) - 0.055;
-            vec3 s = step( vec3(0.0031308), cl);
-            return mix( c_lo, c_hi, s );
-        }
-        #else
-        vec3 srgb2lin(vec3 c) { return c*c; }
-        vec3 lin2srgb(vec3 c) { return sqrt(c); }
-        #endif //GAMMA_SRGB
-
-        //note:: uniform pdf rand [0:1[
-        float hash12n(vec2 p)
-        {
-            p = fract(p * vec2(5.3987, 5.4421));
-            p += dot(p.yx, p.xy + vec2(21.5351, 14.3137));
-            return fract(p.x * p.y * 95.4307);
-        }
-
-        float sampleGaussian(int samplepoint) {
-            int smplGaussian = samplepoint / (NUM_SAMPLES);
-            float weight = (1.0 / sqrt(2.0*M_PI)) * exp(-1.0*pow(float(smplGaussian), 2.0) / 2.0);
-            return weight;
-        }
-
-        void interchangesort(inout MedianStruct arraySamples[NUM_SAMPLES]) {
-            const int lengthOfArray = NUM_SAMPLES;
-            // we use an anidated loop
-            for (int i = 0; i < lengthOfArray; i++) {
-                for (int j = 0; j < lengthOfArray; j++) {
-                    if (arraySamples[i].greyval > arraySamples[j].greyval) {
-                        // Interchange of values
-                        MedianStruct auxvar = arraySamples[i];
-                        arraySamples[i] = arraySamples[j];
-                        arraySamples[j] = auxvar;
-                    }
-                }
-            }
-        }
-
-        vec3 medianFilter(MedianStruct arraySamples[NUM_SAMPLES]) {
-             interchangesort(arraySamples);
-             const int i = 15;
-             const int medianPositionFilter = int(NUM_SAMPLES / 2);
-             return (arraySamples[medianPositionFilter].color_rgb);
-             //return(vec3(1.0, 0.0, 0.0));
-        }
-
-        void main(void) {
-            vec2 blurvec = normalize(blurdir) / iResolution.xy;
-
-            vec2 uv = gl_FragCoord.xy / iResolution.xy;
-            
-            float paramBokehQuantity = 0.0;
-            if (uEnableDepthBokeh == 0) 
-            {
-                //paramBokehQuantity = ( 0.55 + 0.45 * sin( 5.0 * uv.x + iTime ) );
-                paramBokehQuantity = 1.0;
-            } else {
-                paramBokehQuantity = texture2D(uSamplerFocalDepth, vTextureCoord).x;
-            }
-            float ammountBlur = bokehStrength * paramBokehQuantity;
-
-            float blurdist = blurdist_px * ammountBlur;
-
-            vec2 p0 = uv;
-            vec2 p1 = uv + blurdist * blurvec;
-            vec2 stepvec = (p1 - p0) / float(NUM_SAMPLES);
-            vec2 p = p0;
-            #if defined(USE_RANDOM)
-            p += (hash12n(uv+fract(iTime)+0.5)) * stepvec;
-            #endif
-
-            vec3 sumcol = vec3(0.0);
-
-            float firstSampleWeight = 1.0 / (float(NUM_SAMPLES)*0.4);
-            float restOfSampleWeights = firstSampleWeight;
-
-            //float acum = 0.0;
-            //MedianStruct arraySamples[NUM_SAMPLES];
-
-            for (int i=0; i<NUM_SAMPLES;++i)
-            {
-                float weightSmpl = sampleGaussian(i);
-                weightSmpl = 1.0;
-                sumcol += weightSmpl * texture2D( iChannel1, p).rgb;
-                vec3 smpl = texture2D(iChannel1, p).rgb;
-                //acum += weightSmpl;
-
-                //arraySamples[i].greyval = (smpl.x + smpl.y + smpl.z)/3.0;
-                //arraySamples[i].color_rgb = vec3(smpl.x, smpl.y, smpl.z);
-
-
-                p += stepvec;
-            }
-            //sumcol = medianFilter(arraySamples);
-            sumcol /= float(NUM_SAMPLES);
-            //sumcol /= acum;
-
-            vec3 s2 = texture2D(iChannel2, uv).rgb;
-            vec3 s3 = texture2D( iChannel3, uv).rgb;
-
-            // DEBUG
-            //gl_FragColor = texture2D( iChannel0, uv); return; // DBG BufferA
-            //gl_FragColor = texture2D( iChannel1, uv); return; // DBG BufferB
-            //gl_FragColor = texture2D( iChannel2, uv); return; // DBG BufferC
-            //gl_FragColor = texture2D( iChannel3, uv); return; // DBG BufferD
-
-
-            //gl_FragColor = texture2D( iChannel1, uv); return; // DBG
-            //gl_FragColor = texture2D( iChannel2, uv); return; // DBG
-            //gl_FragColor = texture2D( iChannel3, uv); return; // DBG
-
-            //gl_FragColor = vec4(sumcol,1.0); return; //DBG
-            //gl_FragColor = texture2D( iChannel2, uv); return; // DBG
-            //gl_FragColor = vec4(lin2srgb(s2), 1.0); return; //DBG
-            //gl_FragColor = vec4(lin2srgb(s3), 1.0); return; //DBG
-
-            vec3 outcol = sumcol + s2 + s3;
-            gl_FragColor = vec4(outcol*0.3333, 1.0);
-
-            //gl_FragColor = vec4(0.0, 1.0, 1.0, 1.0);
-        }
-	</script>
-
-
-
-    <script id="shader-fs-FirstBokehBlurPass-VerticalUp" type="x-shader/x-fragment">
-        precision mediump float;
-
-        uniform sampler2D uSampler;
-
-        uniform float bokehStrength;
-
-        uniform vec2 uResolution;
-
-        varying vec2 vTextureCoord;
-
-        const int NUM_SAMPLES = 64;
-
-        float OneOverScreenWidth;
-        float OneOverScreenHeight;
-
-        // Prototype function
-        float GatherAndApply(vec2 uv, float stepDistance, inout vec4 outputColor);
-
-        void main() {
-
-            vec4 outputColor = vec4(0.0, 0.0, 0.0, 1.0);
-            vec4 outputColor2 = vec4(0.0, 0.0, 0.0, 1.0);
-
-            //vec2 blurvec = normalize(blurdir) / uResolution.xx;
-            //vec2 uv = gl_FragCoord.xy / uResolution.xy;
-
-            //float blurdist = blurdist_px * bokehStrength;
-
-            //vec2 p0 = uv;
-            //vec2 p1 = uv + blurdist * blurvec;
-            //vec2 stepvec = (p1 - p0) / float(NUM_SAMPLES);
-            //vec2 p = p0;
-
-            #if defined(USE_RANDOM)
-            p += (hash12n(uv + fract(iTime)+0.1)) * stepvec;
-            #endif
-
-
-
-
-            OneOverScreenWidth = 1.0/uResolution.x;
-            OneOverScreenHeight = 1.0/uResolution.y;
-
-            vec4 baseColour = texture2D(uSampler, vTextureCoord);
-
-            float sampleCount0 = 0.0;
-            float sampleCount1 = 0.0;
-
-            float xStep = 0.866 * (OneOverScreenWidth/OneOverScreenHeight);
-
-            #if defined(USE_RANDOM)
-            //float stepvec = 
-            //vTextureCoord += (hash12n(vTextureCoord + fract(uTime)+0.1)) * 
-            #endif
-
-            for (int i = 0; i < NUM_SAMPLES; i++) {
-                float ammountBlur = bokehStrength;
-                //ammountBlur = 1.0;
-                float stepDistance = (float(i) + 0.5) * OneOverScreenHeight * ammountBlur;
-
-                // Vertical blur
-                vec2 step0 = vec2(0.0, -1.0) * stepDistance;
-                sampleCount0 += GatherAndApply(vTextureCoord + step0, stepDistance, outputColor);
-
-                // Diagonal blur
-                vec2 step1 = vec2(xStep, 0.5) * stepDistance;
-                sampleCount1 += GatherAndApply(vTextureCoord + step1, stepDistance, outputColor2);
-            }
-
-            //outputColor.xyz = vec3(clamp(outputColor.x, 0.0, 1.0), clamp(outputColor.y, 0.0, 1.0), clamp(outputColor.z, 0.0, 1.0));
-
-            // Normalise if any color was added.
-            outputColor.xyz = sampleCount0 > 0.0 ? outputColor.xyz / sampleCount0 : vec3(0.0, 1.0, 0.0);
-            outputColor2.xyz = sampleCount1 > 0.0 ? (outputColor2.xyz / sampleCount1) : vec3(0.0, 1.0, 0.0);
-
-            //gl_FragColor = vec4(vec3(bokehStrength) * vec3(baseColour), 1.0);
-            //gl_FragColor = vec4((gl_FragCoord.xy)/vec2(OneOverScreenWidth, OneOverScreenHeight), 0.0, 1.0);
-            gl_FragColor = outputColor;
-            //gl_FragColor = vec4(0.0, 1.0, 0.0, 1.0);
-        }
-
-
-        float GatherAndApply(vec2 uv, float stepDistance, inout vec4 outColor) {
-            //outColor = vec4(1.0, 0.0, 0.0, 1.0);
-            // outCol = baseColour; outColor = currCol;
-            vec4 col = texture2D(uSampler, uv);
-            //float absCoC = abs(10000.0*bokehStrength/1.0);
-            float absCoC = abs(bokehStrength);
-
-            // Accumulate the colour. Allow partial sampling at the pixel bounday for smoothness.
-            float sampleFraction = clamp((absCoC - stepDistance) / OneOverScreenHeight, 0.0, 1.0);
-            //sampleFraction = 1.0;
-
-            //if (((col.x + col.y + col.z) / 3.0) > 0.8) {
-            //    col.xyz = vec3(0.0, 0.0, 10) * col.xyz;
-            //}
-
-            outColor.xyz += sampleFraction * col.xyz;
-            //outColor.xyz = vec3(1.0, 0.0, 0.0);
-            //outColor.xyz = col.xyz;
-            // CoC , 0 
-
-            //return 0.0;
-            return sampleFraction;
-        }
-    </script>
-
-    <script id="shader-fs-FirstBokehBlurPass-CombinedBlurs" type="x-shader/x-fragment">
-        precision mediump float;
-
-        uniform sampler2D uSampler;
-
-        uniform float bokehStrength;
-
-        uniform vec2 uResolution;
-
-        varying vec2 vTextureCoord;
-
-        const int NUM_SAMPLES = 32;
-
-        float OneOverScreenWidth;
-        float OneOverScreenHeight;
-
-        // Prototype function
-        float GatherAndApply(vec2 uv, float stepDistance, inout vec4 outputColor);
-
-        void main() {
-
-            vec4 outputColor = vec4(0.0, 0.0, 0.0, 1.0);
-            vec4 outputColor2 = vec4(0.0, 0.0, 0.0, 1.0);
-
-            OneOverScreenWidth = 1.0/uResolution.x;
-            OneOverScreenHeight = 1.0/uResolution.y;
-
-            vec4 baseColour = texture2D(uSampler, vTextureCoord);
-
-            float sampleCount0 = 0.0;
-            float sampleCount1 = 0.0;
-
-            float xStep = 0.866 * (OneOverScreenWidth/OneOverScreenHeight);
-
-            for (int i = 0; i < NUM_SAMPLES; i++) {
-                float ammountBlur = bokehStrength;
-                float stepDistance = (float(i) + 0.5) * OneOverScreenHeight * ammountBlur;
-
-                // Vertical blur
-                vec2 step0 = vec2(0.0, -1.0) * stepDistance;
-                sampleCount0 += GatherAndApply(vTextureCoord + step0, stepDistance, outputColor);
-
-                // Diagonal blur
-                vec2 step1 = vec2(xStep, 0.5) * stepDistance;
-                sampleCount1 += GatherAndApply(vTextureCoord + step1, stepDistance, outputColor2);
-            }
-
-            //outputColor.xyz = vec3(clamp(outputColor.x, 0.0, 1.0), clamp(outputColor.y, 0.0, 1.0), clamp(outputColor.z, 0.0, 1.0));
-
-            // Normalise if any color was added.
-            outputColor.xyz = sampleCount0 > 0.0 ? outputColor.xyz / sampleCount0 : vec3(0.0, 1.0, 0.0);
-            outputColor2.xyz = sampleCount1 > 0.0 ? (outputColor2.xyz / sampleCount1) : vec3(0.0, 1.0, 0.0);
-
-            //gl_FragColor = vec4(vec3(bokehStrength) * vec3(baseColour), 1.0);
-            //gl_FragColor = vec4((gl_FragCoord.xy)/vec2(OneOverScreenWidth, OneOverScreenHeight), 0.0, 1.0);
-            gl_FragColor = (outputColor + outputColor2)/2.0;
-        }
-
-
-        float GatherAndApply(vec2 uv, float stepDistance, inout vec4 outColor) {
-            //outColor = vec4(1.0, 0.0, 0.0, 1.0);
-            // outCol = baseColour; outColor = currCol;
-            vec4 col = texture2D(uSampler, uv);
-            //float absCoC = abs(10000.0*bokehStrength/1.0);
-            float absCoC = abs(bokehStrength);
-
-            // Accumulate the colour. Allow partial sampling at the pixel bounday for smoothness.
-            float sampleFraction = clamp((absCoC - stepDistance) / OneOverScreenHeight, 0.0, 1.0);
-            //sampleFraction = 1.0;
-
-            //if (((col.x + col.y + col.z) / 3.0) > 0.8) {
-            //    col.xyz = vec3(10) * col.xyz;
-            //}
-
-            outColor.xyz += sampleFraction * col.xyz;
-            //outColor.xyz = vec3(1.0, 0.0, 0.0);
-            //outColor.xyz = col.xyz;
-            // CoC , 0 
-
-            //return 0.0;
-            return sampleFraction;
-        }
-    </script>
-
-    <script id="shader-fs-FirstBokehBlurPass-DownLeft" type="x-shader/x-fragment">
-        precision mediump float;
-
-        uniform sampler2D uSampler;
-
-        uniform float bokehStrength;
-
-        uniform vec2 uResolution;
-
-        varying vec2 vTextureCoord;
-
-        const int NUM_SAMPLES = 32;
-
-        float OneOverScreenWidth;
-        float OneOverScreenHeight;
-
-        // Prototype function
-        float GatherAndApply(vec2 uv, float stepDistance, inout vec4 outputColor);
-
-        void main() {
-
-            vec4 outputColor = vec4(0.0, 0.0, 0.0, 1.0);
-            //vec4 outputColor2 = vec4(0.0, 0.0, 0.0, 1.0);
-
-            OneOverScreenWidth = 1.0/uResolution.x;
-            OneOverScreenHeight = 1.0/uResolution.y;
-
-            vec4 baseColour = texture2D(uSampler, vTextureCoord);
-
-            float sampleCount0 = 0.0;
-            //float sampleCount1 = 0.0;
-
-            float xStep = 0.866 * (OneOverScreenWidth/OneOverScreenHeight);
-
-            for (int i = 0; i < NUM_SAMPLES; i++) {
-                float ammountBlur = bokehStrength;
-                float stepDistance = (float(i) + 0.5) * OneOverScreenHeight * ammountBlur;
-
-                // Diagonal blur
-                vec2 step0 = vec2(xStep, 0.5) * stepDistance;
-                sampleCount0 += GatherAndApply(vTextureCoord + step0, stepDistance, outputColor);
-
-            }
-            // Normalise if any color was added.
-            outputColor.xyz = sampleCount0 > 0.0 ? outputColor.xyz / sampleCount0 : vec3(0.0, 1.0, 0.0);
-
-            gl_FragColor = outputColor;
-        }
-
-
-        float GatherAndApply(vec2 uv, float stepDistance, inout vec4 outColor) {
-            //outColor = vec4(1.0, 0.0, 0.0, 1.0);
-            // outCol = baseColour; outColor = currCol;
-            vec4 col = texture2D(uSampler, uv);
-            //float absCoC = abs(10000.0*bokehStrength/1.0);
-            float absCoC = abs(bokehStrength);
-
-            // Accumulate the colour. Allow partial sampling at the pixel bounday for smoothness.
-            float sampleFraction = clamp((absCoC - stepDistance) / OneOverScreenHeight, 0.0, 1.0);
-            //sampleFraction = 1.0;
-
-            //if (((col.x + col.y + col.z) / 3.0) > 0.8) {
-            //    col.xyz = vec3(10) * col.xyz;
-            //}
-
-            outColor.xyz += sampleFraction * col.xyz;
-            //outColor.xyz = vec3(1.0, 0.0, 0.0);
-            //outColor.xyz = col.xyz;
-            // CoC , 0 
-
-            //return 0.0;
-            return sampleFraction;
-        }
-    </script>
-
-    <script id="shader-fs-SecondBokehBlurPass-DownLeft" type="x-shader/x-fragment">
-        precision mediump float;
-
-        uniform sampler2D uSampler;
-
-        uniform float bokehStrength;
-
-        uniform vec2 uResolution;
-
-        varying vec2 vTextureCoord;
-
-        const int NUM_SAMPLES = 32;
-
-        float OneOverScreenWidth;
-        float OneOverScreenHeight;
-
-        float GatherAndApply(vec2 uv, float stepDistance, inout vec4 outColor);
-
-        void main(void) {
-            vec4 outputColor = vec4(0.0, 0.0, 0.0, 1.0);
-
-            OneOverScreenWidth = 1.0/uResolution.x;
-            OneOverScreenHeight = 1.0/uResolution.y;
-
-            vec4 baseColour = texture2D(uSampler, vTextureCoord);
-
-            float sampleCount0 = 0.0;
-
-            float xStep = 0.866 * (OneOverScreenWidth/OneOverScreenHeight);
-
-            for (int i = 0; i < NUM_SAMPLES; i++)
-            {
-                float ammountBlur = bokehStrength;
-                float stepDistance = (float(i) + 0.5) * OneOverScreenHeight * ammountBlur;
-
-                // Diagonal blur
-                vec2 step0 = vec2(xStep, 0.5) * stepDistance;
-                sampleCount0 += GatherAndApply(vTextureCoord + step0, stepDistance, outputColor);
-            }
-            // Normalise if any colors was added
-            outputColor.xyz = sampleCount0 > 0.0 ? outputColor.xyz / sampleCount0 : vec3(0.0, 1.0, 0.0);
-
-            gl_FragColor = outputColor;
-        }
-
-        float GatherAndApply(vec2 uv, float stepDistance, inout vec4 outColor) {
-            //outColor = vec4(1.0, 0.0, 0.0, 1.0);
-            // outCol = baseColour; outColor = currCol;
-            vec4 col = texture2D(uSampler, uv);
-            //float absCoC = abs(10000.0*bokehStrength/1.0);
-            float absCoC = abs(bokehStrength);
-
-            // Accumulate the colour. Allow partial sampling at the pixel bounday for smoothness.
-            float sampleFraction = clamp((absCoC - stepDistance) / OneOverScreenHeight, 0.0, 1.0);
-            //sampleFraction = 1.0;
-
-            //if (((col.x + col.y + col.z) / 3.0) > 0.8) {
-            //    col.xyz = vec3(10) * col.xyz;
-            //}
-
-            outColor.xyz += sampleFraction * col.xyz;
-            //outColor.xyz = vec3(1.0, 0.0, 0.0);
-            //outColor.xyz = col.xyz;
-            // CoC , 0 
-
-            //return 0.0;
-            return sampleFraction;
-        }
-
-    </script>
-
-    <script id="shader-fs-SecondBokehBlurPass-DownRight" type="x-shader/x-fragment">
-        precision mediump float;
-
-        uniform sampler2D uSampler;
-        uniform sampler2D uSampler2;
-
-        uniform float bokehStrength;
-
-        uniform vec2 uResolution;
-
-        varying vec2 vTextureCoord;
-
-        const int NUM_SAMPLES = 32;
-
-        float OneOverScreenWidth;
-        float OneOverScreenHeight;
-
-        float GatherAndApply(vec2 uv, float stepDistance, inout vec4 outColor);
-
-        void main(void) {
-
-            //vec4 color = texture2D(uSampler2, vTextureCoord);
-            //gl_FragColor = color; return;
-            vec4 outputColor2 = vec4(0.0, 0.0, 0.0, 1.0);
-
-            OneOverScreenWidth = 1.0/uResolution.x;
-            OneOverScreenHeight = 1.0/uResolution.y;
-
-            //vec4 baseColour1 = texture2D(uSamplerVerticalPass1, vTextureCoord);
-            //vec4 baseColour2 = texture2D(uSamplerDiagonalPass1, vTextureCoord);
-
-            float sampleCount0 = 0.0;
-
-            float xStep = 0.866 * (OneOverScreenWidth/OneOverScreenHeight);
-
-            for (int i = 0; i < NUM_SAMPLES; i++)
-            {
-                float ammountBlur = bokehStrength;
-                float stepDistance = (float(i) + 0.5) * OneOverScreenHeight * ammountBlur;
-
-                // Diagonal blur
-                vec2 step0 = vec2(-xStep, 0.5) * stepDistance;
-                sampleCount0 += GatherAndApply(vTextureCoord + step0, stepDistance, outputColor2);
-            }
-            // Normalise if any colors was added
-            outputColor2.xyz = sampleCount0 > 0.0 ? outputColor2.xyz / sampleCount0 : vec3(0.0, 1.0, 0.0);
-
-            vec4 outputColor = texture2D(uSampler2, vTextureCoord);
-
-            gl_FragColor = outputColor2;
-        }
-
-        float GatherAndApply(vec2 uv, float stepDistance, inout vec4 outColor) {
-            //outColor = vec4(1.0, 0.0, 0.0, 1.0);
-            // outCol = baseColour; outColor = currCol;
-            vec4 col = texture2D(uSampler, uv);
-            //float absCoC = abs(10000.0*bokehStrength/1.0);
-            float absCoC = abs(bokehStrength);
-
-            // Accumulate the colour. Allow partial sampling at the pixel bounday for smoothness.
-            float sampleFraction = clamp((absCoC - stepDistance) / OneOverScreenHeight, 0.0, 1.0);
-            //sampleFraction = 1.0;
-
-            //if (((col.x + col.y + col.z) / 3.0) > 0.8) {
-            //    col.xyz = vec3(10) * col.xyz;
-            //}
-
-            outColor.xyz += sampleFraction * col.xyz;
-            //outColor.xyz = vec3(1.0, 0.0, 0.0);
-            //outColor.xyz = col.xyz;
-            // CoC , 0 
-
-            //return 0.0;
-            return sampleFraction;
-        }
-
-    </script>
-
-
-    <script id="shader-fs-FirstAndSecondCombined" type="x-shader/x-fragment">
-        precision mediump float;
-
-        uniform sampler2D uSampler;
-        uniform sampler2D uSampler2;
-
-        uniform float bokehStrength;
-
-        uniform vec2 uResolution;
-
-        varying vec2 vTextureCoord;
-
-        const int NUM_SAMPLES = 32;
-
-        float OneOverScreenWidth;
-        float OneOverScreenHeight;
-
-        float GatherAndApply(vec2 uv, float stepDistance, inout vec4 outColor);
-
-        void main(void) {
-
-            //vec4 color = texture2D(uSampler2, vTextureCoord);
-            //gl_FragColor = color; return;
-            vec4 outputColor2 = vec4(0.0, 0.0, 0.0, 1.0);
-
-            OneOverScreenWidth = 1.0/uResolution.x;
-            OneOverScreenHeight = 1.0/uResolution.y;
-
-            //vec4 baseColour1 = texture2D(uSamplerVerticalPass1, vTextureCoord);
-            //vec4 baseColour2 = texture2D(uSamplerDiagonalPass1, vTextureCoord);
-
-            float sampleCount0 = 0.0;
-
-            float xStep = 0.866 * (OneOverScreenWidth/OneOverScreenHeight);
-
-            for (int i = 0; i < NUM_SAMPLES; i++)
-            {
-                float ammountBlur = bokehStrength;
-                float stepDistance = (float(i) + 0.5) * OneOverScreenHeight * ammountBlur;
-
-                // Diagonal blur
-                vec2 step0 = vec2(-xStep, 0.5) * stepDistance;
-                sampleCount0 += GatherAndApply(vTextureCoord + step0, stepDistance, outputColor2);
-            }
-            // Normalise if any colors was added
-            outputColor2.xyz = sampleCount0 > 0.0 ? outputColor2.xyz / sampleCount0 : vec3(0.0, 1.0, 0.0);
-
-            vec4 outputColor = texture2D(uSampler2, vTextureCoord);
-
-            gl_FragColor = (2.0*outputColor + outputColor2) / 2.0;
-        }
-
-        float GatherAndApply(vec2 uv, float stepDistance, inout vec4 outColor) {
-            //outColor = vec4(1.0, 0.0, 0.0, 1.0);
-            // outCol = baseColour; outColor = currCol;
-            vec4 col = texture2D(uSampler, uv);
-            //float absCoC = abs(10000.0*bokehStrength/1.0);
-            float absCoC = abs(bokehStrength);
-
-            // Accumulate the colour. Allow partial sampling at the pixel bounday for smoothness.
-            float sampleFraction = clamp((absCoC - stepDistance) / OneOverScreenHeight, 0.0, 1.0);
-            //sampleFraction = 1.0;
-
-            //if (((col.x + col.y + col.z) / 3.0) > 0.8) {
-            //    col.xyz = vec3(10) * col.xyz;
-            //}
-
-            outColor.xyz += sampleFraction * col.xyz;
-            //outColor.xyz = vec3(1.0, 0.0, 0.0);
-            //outColor.xyz = col.xyz;
-            // CoC , 0 
-
-            //return 0.0;
-            return sampleFraction;
-        }
-
-    </script>
-
-
+	
 
 	<script id="shader-vs-postprocess" type="x-shader/x-vertex">
 		attribute vec3 aVertexPosition;
@@ -1872,6 +377,201 @@
             vTextureCoord = aTextureCoord;
             gl_Position = model * vec4(aVertexPosition, 1.0);
         }
+    </script>
+
+    <script id="BlurPass1" type="x-shader/x-fragment">
+        #extension GL_EXT_draw_buffers : require
+
+        precision mediump float;
+
+        uniform sampler2D uSampler;
+        uniform float bokehStrength;
+        uniform vec2 uResolution;
+        varying vec2 vTextureCoord;
+
+        uniform float uTime;
+
+        #define USE_RANDOM 
+
+        const int NUM_SAMPLES = 32;
+
+        float OneOverScreenWidth;
+        float OneOverScreenHeight;
+
+        float GatherAndApply(vec2 uv, float stepDistance, inout vec4 outputColor);
+        float hash12n(vec2 p);
+
+        void main() {
+            vec4 outputColor = vec4(0.0, 0.0, 0.0, 1.0);
+            vec4 outputColor2 = vec4(0.0, 0.0, 0.0, 1.0);
+
+            OneOverScreenWidth = 1.0/uResolution.x;
+            OneOverScreenHeight = 1.0/uResolution.y;
+
+            vec4 baseColour = texture2D(uSampler, vTextureCoord);
+
+            float sampleCount0 = 0.0;
+            float sampleCount1 = 0.0;
+
+            // Diagonal blur step, corrector for aspect ratio
+            float xStep = 0.866 * (OneOverScreenWidth/OneOverScreenHeight);
+
+            for (int i = 0; i < NUM_SAMPLES; i++)
+            {
+                float ammountBlur = bokehStrength;
+                float stepDistance = (float(i) + 0.5) * OneOverScreenHeight * ammountBlur;
+
+                // Vertical blur.
+                vec2 step0 = vec2(0.0, -1.0) * stepDistance;
+                #if defined(USE_RANDOM) 
+                    step0 += (hash12n(step0 + fract(uTime)+0.001)) * stepDistance;
+                #endif
+                sampleCount0 += GatherAndApply(vTextureCoord + step0, stepDistance, outputColor);
+
+                // Diagonal blur
+                vec2 step1 = vec2(xStep, 0.5) * stepDistance;
+                sampleCount1 += GatherAndApply(vTextureCoord + step1, stepDistance, outputColor2);
+            }
+
+            //Normalize if any color was added. 
+            outputColor.xyz = sampleCount0 > 0.0 ? outputColor.xyz / sampleCount0 : vec3(0.0, 1.0, 0.0);
+            outputColor2.xyz = sampleCount1 > 0.0 ? outputColor2.xyz / sampleCount1 : vec3(0.0, 1.0, 0.0);
+
+            // The second render target contains both of these added together. Don't divide 
+            // by two here, as it'll be combined again and divided by three in the next pass.
+            outputColor2.xyz += outputColor.xyz;
+
+            //gl_FragData[0] = vec4(0.90, 0.73, 0.039, 1.0);
+            //gl_FragData[1] = vec4(0.92, 0.47, 0.92, 1.0);
+
+            gl_FragData[0] = outputColor;
+            gl_FragData[1] = outputColor2;
+        }
+
+        float GatherAndApply(vec2 uv, float stepDistance, inout vec4 outColor) {
+            
+
+            vec4 col = texture2D(uSampler, uv);
+            
+            float absCoC = abs(bokehStrength);
+
+            // Accumulate the colour. Allow partial sampling at the pixel bounday for smoothness.
+            float sampleFraction = clamp((absCoC - stepDistance) / OneOverScreenHeight, 0.0, 1.0);
+
+            outColor.xyz += sampleFraction * col.xyz;
+        
+            return sampleFraction;
+        }
+
+        // note: uniform pdf ranf [0;1[
+        float hash12n(vec2 p) 
+        {
+            p = fract(p * vec2(5.3987, 5.4421));
+            p += dot(p.yx, p.xy + vec2(21.5351, 14.3137));
+            return fract(p.x * p.y * 95.4307);
+        }
+    </script>
+
+    <script id="BlurPass2" type="x-shader/x-fragment">
+        precision mediump float;
+
+        uniform sampler2D BlurPass1_0;
+        uniform sampler2D BlurPass1_1;
+
+        uniform float bokehStrength;
+
+        uniform vec2 uResolution;
+        varying vec2 vTextureCoord;
+
+        uniform float uTime;
+
+        #define USE_RANDOM 
+
+        const int NUM_SAMPLES = 32;
+
+        float OneOverScreenWidth;
+        float OneOverScreenHeight;
+
+        vec4 finalCol;
+
+        float GatherAndApply(sampler2D texture, vec2 uv, float stepDistance, inout vec4 outColor);
+        float hash12n(vec2 p);
+
+        void main(void) {
+            vec4 baseColour = texture2D(BlurPass1_1, vTextureCoord);
+
+            // Two sets of colour to accumulate this time.
+            vec4 outputColor0 = vec4(0.0, 0.0, 0.0, 1.0);
+            vec4 outputColor1 = vec4(0.0, 0.0, 0.0, 1.0);
+
+            OneOverScreenWidth = 1.0/uResolution.x;
+            OneOverScreenHeight = 1.0/uResolution.y;
+
+            float sampleCount0 = 0.0;
+            float sampleCount1 = 0.0;
+
+            // Diagonal passes in different directions for each input texture
+            float xStep = 0.866 * (OneOverScreenWidth/OneOverScreenHeight);
+            vec2 step0 = vec2(xStep, 0.5);
+            vec2 step1 = vec2(-xStep, 0.5);
+
+            for (int i = 0; i < NUM_SAMPLES; i++)
+            {
+                float ammountBlur = bokehStrength;
+                float stepDistance = (float(i) + 0.5) * OneOverScreenHeight * bokehStrength;
+
+                sampleCount0 += GatherAndApply(BlurPass1_0, vTextureCoord + step0 * stepDistance, stepDistance, outputColor0);
+                sampleCount1 += GatherAndApply(BlurPass1_1, vTextureCoord + step1 * stepDistance, stepDistance, outputColor1);
+            }
+
+            // Normalize if any color was added. col0 is from sampling the single texture,
+            // so use half the base colour (which is from the combined texture)
+            outputColor0.xyz = sampleCount0 > 0.0 ? outputColor0.xyz / sampleCount0 : baseColour.xyz * 0.5;
+            outputColor1.xyz = sampleCount1 > 0.0 ? outputColor1.xyz / sampleCount1 : baseColour.xyz;
+
+
+            // Combine and divide by three (col1 is double brightness)
+            finalCol.xyz = (outputColor0.xyz + outputColor1.xyz) / 3.0;
+            finalCol.w = 1.0;
+
+            gl_FragColor = finalCol;
+        }
+
+        float GatherAndApply(sampler2D texture, vec2 uv, float stepDistance, inout vec4 outColor) {
+            #if defined(USE_RANDOM) 
+                uv += (hash12n(uv + fract(uTime)+0.1)) * stepDistance;
+            #endif
+            //outColor = vec4(1.0, 0.0, 0.0, 1.0);
+            // outCol = baseColour; outColor = currCol;
+            vec4 col = texture2D(texture, uv);
+            //float absCoC = abs(10000.0*bokehStrength/1.0);
+            float absCoC = abs(bokehStrength);
+
+            // Accumulate the colour. Allow partial sampling at the pixel bounday for smoothness.
+            float sampleFraction = clamp((absCoC - stepDistance) / OneOverScreenHeight, 0.0, 1.0);
+            //sampleFraction = 1.0;
+
+            //if (((col.x + col.y + col.z) / 3.0) > 0.8) {
+            //    col.xyz = vec3(0.0, 0.0, 10) * col.xyz;
+            //}
+
+            outColor.xyz += sampleFraction * col.xyz;
+            //outColor.xyz = vec3(1.0, 0.0, 0.0);
+            //outColor.xyz = col.xyz;
+            // CoC , 0 
+
+            //return 0.0;
+            return sampleFraction;
+        }
+
+        // note: uniform pdf ranf [0;1[
+        float hash12n(vec2 p) 
+        {
+            p = fract(p * vec2(5.3987, 5.4421));
+            p += dot(p.yx, p.xy + vec2(21.5351, 14.3137));
+            return fract(p.x * p.y * 95.4307);
+        }
+
     </script>
 
 	<script type="text/javascript">
@@ -1926,6 +626,9 @@
 
         var lightPointPos = vec3.fromValues(10.0, 10.0, 15.0);
 
+        var ext3;
+        var MRTfbData;
+
 		function initGL(canvas) {
 			try {
 				gl = canvas.getContext("experimental-webgl");
@@ -1973,48 +676,7 @@
 			return shader;
 		}
 
-		var shaderProgram;
-
-		function initShaders() {
-			var fragmentShader = getShader(gl, "per-fragment-lighting-fs");
-			var vertexShader = getShader(gl, "per-fragment-lighting-vs");
-
-			shaderProgram = gl.createProgram();
-			gl.attachShader(shaderProgram, vertexShader);
-			gl.attachShader(shaderProgram, fragmentShader);
-			gl.linkProgram(shaderProgram);
-
-			if(!gl.getProgramParameter(shaderProgram, gl.LINK_STATUS)) {
-				alert("Could not initialise shaders");
-			}
-
-			//gl.useProgram(shaderProgram);
-
-			shaderProgram.vertexPositionAttribute = gl.getAttribLocation(shaderProgram, "aVertexPosition");
-			gl.enableVertexAttribArray(shaderProgram.vertexPositionAttribute);
-
-			shaderProgram.vertexNormalAttribute = gl.getAttribLocation(shaderProgram, "aVertexNormal");
-			gl.enableVertexAttribArray(shaderProgram.vertexNormalAttribute);
-
-			shaderProgram.textureCoordAttribute = gl.getAttribLocation(shaderProgram, "aTextureCoord");
-			gl.enableVertexAttribArray(shaderProgram.textureCoordAttribute);
-
-			shaderProgram.pMatrixUniform = gl.getUniformLocation(shaderProgram, "uPMatrix");
-			shaderProgram.modelMatrixUniform = gl.getUniformLocation(shaderProgram, "uMMatrix");
-			shaderProgram.viewMatrixUniform = gl.getUniformLocation(shaderProgram, "uVMatrix");
-			shaderProgram.nMatrixUniform = gl.getUniformLocation(shaderProgram, "uNMatrix");
-			shaderProgram.samplerUniform = gl.getUniformLocation(shaderProgram, "uSampler");
-			shaderProgram.materialShininessUniform = gl.getUniformLocation(shaderProgram, "uMaterialShininess");
-			shaderProgram.showSpecularHighlightsUniform = gl.getUniformLocation(shaderProgram, "uShowSpecularHighlights");
-			shaderProgram.useTexturesUniform = gl.getUniformLocation(shaderProgram, "uUseTextures");
-			shaderProgram.useLightingUniform = gl.getUniformLocation(shaderProgram, "uUseLighting");
-			shaderProgram.ambientColorUniform = gl.getUniformLocation(shaderProgram, "uAmbientColor");
-
-			shaderProgram.pointLightingLocationUniform = gl.getUniformLocation(shaderProgram, "uPointLightingLocation");
-			shaderProgram.pointLightingSpecularColorUniform = gl.getUniformLocation(shaderProgram, "uPointLightingSpecularColor");
-			shaderProgram.pointLightingDiffuseColorUniform = gl.getUniformLocation(shaderProgram, "uPointLightingDiffuseColor");
-		}
-
+		
 		var shaderProgramFocalPlane;
 
 		function initShadersFocalPlane() {
@@ -2407,6 +1069,36 @@
             shaderProgramHdrColor.viweMatrixUniform = gl.getUniformLocation(shaderProgramHdrColor, "uVMatrix");
         }
 
+        var shaderProgramFirstPassBlur;
+        function initShadersFirstPassBlur() {
+            var fragmentShader = getShader(gl, "BlurPass1");
+            var vertexShader = getShader(gl, "shader-vs-postprocess");
+
+            shaderProgramFirstPassBlur = gl.createProgram();
+            gl.attachShader(shaderProgramFirstPassBlur, vertexShader);
+            gl.attachShader(shaderProgramFirstPassBlur, fragmentShader);
+            gl.linkProgram(shaderProgramFirstPassBlur);
+
+            if (!gl.getProgramParameter(shaderProgramFirstPassBlur, gl.LINK_STATUS)) {
+                alert("Could not initialise shaders");
+            }
+        }
+
+        var shaderProgramSecondPassBlur;
+        function initShadersSecondPassBlur() {
+            var fragmentShader = getShader(gl, "BlurPass2");
+            var vertexShader = getShader(gl, "shader-vs-postprocess");
+
+            shaderProgramSecondPassBlur = gl.createProgram();
+            gl.attachShader(shaderProgramSecondPassBlur, vertexShader);
+            gl.attachShader(shaderProgramSecondPassBlur, fragmentShader);
+            gl.linkProgram(shaderProgramSecondPassBlur);
+
+            if (!gl.getProgramParameter(shaderProgramSecondPassBlur, gl.LINK_STATUS)) {
+                alert("Could not initialise shaders");
+            }
+        }
+
 
 		function handleLoadedTexture(texture) {
 			gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true);
@@ -2721,14 +1413,21 @@
 
 			gl.uniformMatrix4fv(program.viewMatrixUniform, false, vMatrix);
 
-			//console.log(vMatrix);
-			if (((program == shaderProgram) || (program == shaderProgramDebugObject)) || (program == shaderProgramLightingPhong)) {
-				var normalMatrix = mat3.create();
-				mat3.normalFromMat4(normalMatrix, mMatrix)
-				//mat4.toInverseMat3(mvMatrix, normalMatrix);
-				//mat3.transpose(normalMatrix);
-				gl.uniformMatrix3fv(program.nMatrixUniform, false, normalMatrix);	
-			}
+			// if (((program == shaderProgram) || (program == shaderProgramDebugObject)) || (program == shaderProgramLightingPhong)) {
+			// 	var normalMatrix = mat3.create();
+			// 	mat3.normalFromMat4(normalMatrix, mMatrix)
+			// 	//mat4.toInverseMat3(mvMatrix, normalMatrix);
+			// 	//mat3.transpose(normalMatrix);
+			// 	gl.uniformMatrix3fv(program.nMatrixUniform, false, normalMatrix);	
+			// }
+
+            if ((program == shaderProgramLightingPhong)) {
+                var normalMatrix = mat3.create();
+                mat3.normalFromMat4(normalMatrix, mMatrix)
+                //mat4.toInverseMat3(mvMatrix, normalMatrix);
+                //mat3.transpose(normalMatrix);
+                gl.uniformMatrix3fv(program.nMatrixUniform, false, normalMatrix);   
+            }
 
 		}
 
@@ -3338,51 +2037,51 @@
 
             pMatrix = myCamera.GetProjectionMatrix();
 
-            if (programShading == shaderProgram) {
-                gl.enableVertexAttribArray(programShading.vertexPositionAttribute);
-                gl.enableVertexAttribArray(programShading.vertexNormalAttribute);
-                gl.enableVertexAttribArray(programShading.textureCoordAttribute);
+            // if (programShading == shaderProgram) {
+            //     gl.enableVertexAttribArray(programShading.vertexPositionAttribute);
+            //     gl.enableVertexAttribArray(programShading.vertexNormalAttribute);
+            //     gl.enableVertexAttribArray(programShading.textureCoordAttribute);
 
-                gl.uniform1i(programShading.showSpecularHighlightUnigorm, 1);
-                var lighting = 1;
-                gl.uniform1i(programShading.useLightingUniform, lighting);
+            //     gl.uniform1i(programShading.showSpecularHighlightUnigorm, 1);
+            //     var lighting = 1;
+            //     gl.uniform1i(programShading.useLightingUniform, lighting);
 
-                if (lighting) {
-                    gl.uniform3f(
-                        programShading.ambientColorUniform, 
-                        0.2, 0.2, 0.2
-                    );
+            //     if (lighting) {
+            //         gl.uniform3f(
+            //             programShading.ambientColorUniform, 
+            //             0.2, 0.2, 0.2
+            //         );
 
-                    gl.uniform3f(
-                        programShading.pointLightingLocationUniform,
-                        -10.0, 4.0, -20.0  
-                    );
+            //         gl.uniform3f(
+            //             programShading.pointLightingLocationUniform,
+            //             -10.0, 4.0, -20.0  
+            //         );
 
-                    gl.uniform3f(
-                        programShading.pointLightingSpecularColorUniform,
-                        0.8, 0.8, 0.8
-                    );
+            //         gl.uniform3f(
+            //             programShading.pointLightingSpecularColorUniform,
+            //             0.8, 0.8, 0.8
+            //         );
 
-                    gl.uniform3f(
-                        programShading.pointLightingDiffuseColorUniform,
-                        0.8, 0.8, 0.8
-                    );
-                }
+            //         gl.uniform3f(
+            //             programShading.pointLightingDiffuseColorUniform,
+            //             0.8, 0.8, 0.8
+            //         );
+            //     }
 
-                gl.uniform1i(programShading.useTexturesUniform, 1);
+            //     gl.uniform1i(programShading.useTexturesUniform, 1);
 
-                gl.activeTexture(gl.TEXTURE0);
-                //gl.bindTexture(gl.TEXTURE_2D, sphereTexture);
-                gl.uniform1i(programShading.samplerUniform, 0);
+            //     gl.activeTexture(gl.TEXTURE0);
+            //     //gl.bindTexture(gl.TEXTURE_2D, sphereTexture);
+            //     gl.uniform1i(programShading.samplerUniform, 0);
 
-                gl.uniform1f(programShading.materialShininessUniform, 32.0);
+            //     gl.uniform1f(programShading.materialShininessUniform, 32.0);
 
-                gl.bindBuffer(gl.ARRAY_BUFFER, sphereVertexTextureCoordBuffer);
-                gl.vertexAttribPointer(programShading.textureCoordAttribute, sphereVertexTextureCoordBuffer.itemSize, gl.FLOAT, false, 0, 0);
+            //     gl.bindBuffer(gl.ARRAY_BUFFER, sphereVertexTextureCoordBuffer);
+            //     gl.vertexAttribPointer(programShading.textureCoordAttribute, sphereVertexTextureCoordBuffer.itemSize, gl.FLOAT, false, 0, 0);
 
-                gl.bindBuffer(gl.ARRAY_BUFFER, sphereVertexNormalBuffer);
-                gl.vertexAttribPointer(programShading.vertexNormalAttribute, sphereVertexNormalBuffer.itemSize, gl.FLOAT, false, 0, 0);
-            }
+            //     gl.bindBuffer(gl.ARRAY_BUFFER, sphereVertexNormalBuffer);
+            //     gl.vertexAttribPointer(programShading.vertexNormalAttribute, sphereVertexNormalBuffer.itemSize, gl.FLOAT, false, 0, 0);
+            // }
             if (programShading == shaderProgramDepth) {
                 gl.enableVertexAttribArray(programShading.vertexPositionAttribute);
                 gl.disableVertexAttribArray(shaderProgram.vertexNormalAttribute);
@@ -3532,24 +2231,24 @@
             gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
 
             //drawPlane();
-            drawSphere(programToDraw, vec3.fromValues(-4.3812, 1.7, 0.0), vec3.fromValues(0.2, 0.2, 0.2), vec3.fromValues(181/255, 134/255, 144/255));
-            drawSphere(programToDraw, vec3.fromValues(-2.8, 3.0, 0.0), vec3.fromValues(0.2, 0.2, 0.2), vec3.fromValues(214/255, 211/255, 218/255));
-            drawSphere(programToDraw, vec3.fromValues(-2.2, 2.2, 0.0), vec3.fromValues(0.2, 0.2, 0.2), vec3.fromValues(242/255, 240/255, 241/255));
-            drawSphere(programToDraw, vec3.fromValues(0.1531, -0.2861, 0.0), vec3.fromValues(0.2, 0.2, 0.2), vec3.fromValues(57/255, 93/255, 109/255));
-            drawSphere(programToDraw, vec3.fromValues(0.0, -0.70, 0.0), vec3.fromValues(0.2, 0.2, 0.2), vec3.fromValues(62/255, 101/255, 54/255));
-            drawSphere(programToDraw, vec3.fromValues(-2.18, -1.90, 0.0), vec3.fromValues(0.2, 0.2, 0.2), vec3.fromValues(197/255, 197/255, 197/255));
-            drawSphere(programToDraw, vec3.fromValues(-0.0094, -2.92, 0.0), vec3.fromValues(0.2, 0.2, 0.2), vec3.fromValues(142/255, 90/255, 92/255));
-            drawSphere(programToDraw, vec3.fromValues(0.42, -2.89, 0.0), vec3.fromValues(0.2, 0.2, 0.2), vec3.fromValues(83/255, 79/255, 114/255));
-            drawSphere(programToDraw, vec3.fromValues(0.37, -2.0, 0.0), vec3.fromValues(0.2, 0.2, 0.2), vec3.fromValues(132/255, 86/255, 133/255));
+            drawSphere(programToDraw, vec3.fromValues(-4.3812, 1.7, 0.0), vec3.fromValues(0.2, 0.2, 0.2), vec3.fromValues(181/255, 10 * 134/255, 10 * 144/255));
+            drawSphere(programToDraw, vec3.fromValues(-2.8, 3.0, 0.0), vec3.fromValues(0.2, 0.2, 0.2), vec3.fromValues(10 * 214/255, 10 * 211/255, 10 * 218/255));
+            drawSphere(programToDraw, vec3.fromValues(-2.2, 2.2, 0.0), vec3.fromValues(0.2, 0.2, 0.2), vec3.fromValues(10 * 242/255, 10 * 240/255, 10 * 241/255));
+            drawSphere(programToDraw, vec3.fromValues(0.1531, -0.2861, 0.0), vec3.fromValues(0.2, 0.2, 0.2), vec3.fromValues(10 * 57/255, 10 * 93/255, 10 * 109/255));
+            drawSphere(programToDraw, vec3.fromValues(0.0, -0.70, 0.0), vec3.fromValues(0.2, 0.2, 0.2), vec3.fromValues(10 * 62/255, 10 * 101/255, 10 * 54/255));
+            drawSphere(programToDraw, vec3.fromValues(-2.18, -1.90, 0.0), vec3.fromValues(0.2, 0.2, 0.2), vec3.fromValues(10 * 197/255, 10 * 197/255, 10 * 197/255));
+            drawSphere(programToDraw, vec3.fromValues(-0.0094, -2.92, 0.0), vec3.fromValues(0.2, 0.2, 0.2), vec3.fromValues(10 * 142/255, 10 * 90/255, 10 * 92/255));
+            drawSphere(programToDraw, vec3.fromValues(0.42, -2.89, 0.0), vec3.fromValues(0.2, 0.2, 0.2), vec3.fromValues(10 * 83/255, 10 * 79/255, 10 * 114/255));
+            drawSphere(programToDraw, vec3.fromValues(0.37, -2.0, 0.0), vec3.fromValues(0.2, 0.2, 0.2), vec3.fromValues(10 * 132/255, 10 * 86/255, 10 * 133/255));
 
-            drawSphere(programToDraw, vec3.fromValues(0.22, 0.28, 0.0), vec3.fromValues(0.1, 0.1, 0.1), vec3.fromValues(132/255, 86/255, 133/255));
-            drawSphere(programToDraw, vec3.fromValues(0.27, 0.36, 0.0), vec3.fromValues(0.1, 0.1, 0.1), vec3.fromValues(132/255, 86/255, 133/255));
-            drawSphere(programToDraw, vec3.fromValues(0.29, 0.20, 0.0), vec3.fromValues(0.1, 0.1, 0.1), vec3.fromValues(132/255, 86/255, 133/255));
-            drawSphere(programToDraw, vec3.fromValues(0.33, 0.29, 0.0), vec3.fromValues(0.1, 0.1, 0.1), vec3.fromValues(132/255, 86/255, 133/255));
-            drawSphere(programToDraw, vec3.fromValues(0.33, 0.45, 0.0), vec3.fromValues(0.1, 0.1, 0.1), vec3.fromValues(132/255, 86/255, 133/255));
-            drawSphere(programToDraw, vec3.fromValues(0.40, 0.43, 0.0), vec3.fromValues(0.1, 0.1, 0.1), vec3.fromValues(132/255, 86/255, 133/255));
-            drawSphere(programToDraw, vec3.fromValues(0.3813, 0.59, 0.0), vec3.fromValues(0.1, 0.1, 0.1), vec3.fromValues(132/255, 86/255, 133/255));
-            drawSphere(programToDraw, vec3.fromValues(0.40, 0.76, 0.0), vec3.fromValues(0.1, 0.1, 0.1), vec3.fromValues(132/255, 86/255, 133/255));
+            drawSphere(programToDraw, vec3.fromValues(0.22, 0.28, 0.0), vec3.fromValues(0.1, 0.1, 0.1), vec3.fromValues(10 * 132/255, 10 * 86/255, 10 * 133/255));
+            drawSphere(programToDraw, vec3.fromValues(0.27, 0.36, 0.0), vec3.fromValues(0.1, 0.1, 0.1), vec3.fromValues(10 * 132/255, 10 * 86/255, 10 * 133/255));
+            drawSphere(programToDraw, vec3.fromValues(0.29, 0.20, 0.0), vec3.fromValues(0.1, 0.1, 0.1), vec3.fromValues(10 * 132/255, 10 * 86/255, 10 * 133/255));
+            drawSphere(programToDraw, vec3.fromValues(0.33, 0.29, 0.0), vec3.fromValues(0.1, 0.1, 0.1), vec3.fromValues(10 * 132/255, 10 * 86/255, 10 * 133/255));
+            drawSphere(programToDraw, vec3.fromValues(0.33, 0.45, 0.0), vec3.fromValues(0.1, 0.1, 0.1), vec3.fromValues(10 * 132/255, 10 * 86/255, 10 * 133/255));
+            drawSphere(programToDraw, vec3.fromValues(0.40, 0.43, 0.0), vec3.fromValues(0.1, 0.1, 0.1), vec3.fromValues(10 * 132/255, 10 * 86/255, 10 * 133/255));
+            drawSphere(programToDraw, vec3.fromValues(0.3813, 0.59, 0.0), vec3.fromValues(0.1, 0.1, 0.1), vec3.fromValues(10 * 132/255, 10 * 86/255, 10 * 133/255));
+            drawSphere(programToDraw, vec3.fromValues(0.40, 0.76, 0.0), vec3.fromValues(0.1, 0.1, 0.1), vec3.fromValues(10 * 132/255, 10 *86/255, 10 * 133/255));
 
 
             drawSphere(programToDraw, vec3.fromValues(0.38, 0.17, 0.0), vec3.fromValues(0.1, 0.1, 0.1), vec3.fromValues(132/255, 86/255, 133/255));
@@ -3865,6 +2564,16 @@
             a = interchangesort(a);
         }
 
+        function clock() 
+        {
+            var timeNow = new Date().getTime();
+            if (time_start != 0)
+            {
+                elapsed = timeNow - time_start;
+                elapsed /= 1000;
+            }
+        }
+
 		function tick() {
 			//gl.bindFramebuffer(gl.FRAMEBUFFER, null);
 			//gl.viewport(0, 0, gl.viewportWidth, gl.viewportHeight);
@@ -3877,7 +2586,8 @@
 			//drawSceneDepth();
 			//drawSceneFocalDepth();
 			
-			drawEffects();
+			//drawEffects();
+            drawBokehEffects();
 
 			animate();
 			calculateDeltaTime();
@@ -4412,6 +3122,121 @@
 
 		}
 
+        function drawFirstPassBokeh() {
+            gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+
+            gl.useProgram(shaderProgramFirstPassBlur);
+
+            shaderProgramFirstPassBlur.vertexPositionAttribute = gl.getAttribLocation(shaderProgramFirstPassBlur, "aVertexPosition");
+            gl.enableVertexAttribArray(shaderProgramFirstPassBlur.vertexPositionAttribute);
+
+            shaderProgramFirstPassBlur.textureCoordAttribute = gl.getAttribLocation(
+                shaderProgramFirstPassBlur, "aTextureCoord");
+            gl.enableVertexAttribArray(shaderProgramFirstPassBlur.textureCoordAttribute);
+
+            shaderProgramFirstPassBlur.samplerUniform = gl.getUniformLocation(shaderProgramFirstPassBlur, "uSampler");
+
+            shaderProgramFirstPassBlur.resolutionUniform = gl.getUniformLocation(shaderProgramFirstPassBlur, "uResolution");
+
+            shaderProgramFirstPassBlur.bokehStrengthUniform = gl.getUniformLocation(shaderProgramFirstPassBlur, "bokehStrength");
+
+            shaderProgramFirstPassBlur.timeUnifom = gl.getUniformLocation(shaderProgramFirstPassBlur, "uTime");
+
+            gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+
+            gl.bindBuffer(gl.ARRAY_BUFFER, screenFillingVertexPositionBuffer);
+            gl.vertexAttribPointer(shaderProgramFirstPassBlur.vertexPositionAttribute, screenFillingVertexPositionBuffer.itemSize, gl.FLOAT, false, 0, 0);
+
+            gl.bindBuffer(gl.ARRAY_BUFFER, screenFillingTextureCoordBuffer);
+            gl.vertexAttribPointer(shaderProgramFirstPassBlur.textureCoordAttribute, screenFillingTextureCoordBuffer.itemSize, gl.FLOAT, false, 0, 0);
+
+            gl.activeTexture(gl.TEXTURE0);
+            gl.bindTexture(gl.TEXTURE_2D, textureFramebufferSetupScene);
+            gl.uniform1i(shaderProgramFirstPassBlur.samplerUniform, 0);
+
+            gl.uniform2f(shaderProgramFirstPassBlur.resolutionUniform, gl.viewportWidth, gl.viewportHeight);
+
+            gl.uniform1f(shaderProgramFirstPassBlur.bokehStrengthUniform, bokehStrength);
+
+            gl.uniform1f(shaderProgramFirstPassBlur.timeUniform, elapsed);
+
+            gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, screenFillingIndexBuffer);
+            gl.drawElements(gl.TRIANGLES, screenFillingIndexBuffer.numItems, gl.UNSIGNED_SHORT, 0);
+        }
+
+        function drawSecondPassBokeh() {
+            gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+
+            gl.useProgram(shaderProgramSecondPassBlur);
+
+
+            shaderProgramSecondPassBlur.vertexPositionAttribute = gl.getAttribLocation(shaderProgramSecondPassBlur, "aVertexPosition");
+            gl.enableVertexAttribArray(shaderProgramSecondPassBlur.vertexPositionAttribute);
+
+            shaderProgramSecondPassBlur.textureCoordAttribute = gl.getAttribLocation(shaderProgramSecondPassBlur, "aTextureCoord");
+            gl.enableVertexAttribArray(shaderProgramSecondPassBlur.textureCoordAttribute);
+
+    
+            shaderProgramSecondPassBlur.samplerUniform0 = gl.getUniformLocation(shaderProgramSecondPassBlur, "BlurPass1_0");
+            shaderProgramSecondPassBlur.samplerUniform1 = gl.getUniformLocation(shaderProgramSecondPassBlur, "BlurPass1_1");
+
+
+            shaderProgramSecondPassBlur.resolutionUniform = gl.getUniformLocation(shaderProgramSecondPassBlur, "uResolution");
+
+            shaderProgramSecondPassBlur.bokehStrengthUniform = gl.getUniformLocation(shaderProgramSecondPassBlur, "bokehStrength");
+
+            shaderProgramFirstPassBlur.timeUnifom = gl.getUniformLocation(shaderProgramFirstPassBlur, "uTime");
+
+            gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+
+            gl.bindBuffer(gl.ARRAY_BUFFER, screenFillingVertexPositionBuffer);
+            gl.vertexAttribPointer(shaderProgramSecondPassBlur.vertexPositionAttribute, screenFillingVertexPositionBuffer.itemSize, gl.FLOAT, false, 0, 0);
+
+            gl.bindBuffer(gl.ARRAY_BUFFER, screenFillingTextureCoordBuffer);
+            gl.vertexAttribPointer(shaderProgramSecondPassBlur.textureCoordAttribute, screenFillingTextureCoordBuffer.itemSize, gl.FLOAT, false, 0, 0);
+
+            gl.activeTexture(gl.TEXTURE0);
+            gl.bindTexture(gl.TEXTURE_2D, MRTfbData.t[0]);
+            gl.uniform1i(shaderProgramSecondPassBlur.samplerUniform0, 0);
+
+            gl.activeTexture(gl.TEXTURE1);
+            gl.bindTexture(gl.TEXTURE_2D, MRTfbData.t[1]);
+            gl.uniform1i(shaderProgramSecondPassBlur.samplerUniform1, 1);
+
+            gl.uniform2f(shaderProgramSecondPassBlur.resolutionUniform, gl.viewportWidth, gl.viewportHeight);
+
+            gl.uniform1f(shaderProgramSecondPassBlur.bokehStrengthUniform, bokehStrength);
+
+            gl.uniform1f(shaderProgramFirstPassBlur.timeUniform, elapsed);
+
+            gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, screenFillingIndexBuffer);
+            gl.drawElements(gl.TRIANGLES, screenFillingIndexBuffer.numItems, gl.UNSIGNED_SHORT, 0);
+        }
+
+
+        function drawBokehEffects() {
+            gl.bindFramebuffer(gl.FRAMEBUFFER, framebufferSetupSceneRGBA32F);
+            gl.viewport(0, 0, gl.viewportWidth, gl.viewportHeight);
+
+            drawHDRBokehScene2D(shaderProgramLightingPhong);
+
+            gl.bindFramebuffer(gl.FRAMEBUFFER, MRTfbData.f);
+
+            var bufferList = [
+                ext3.COLOR_ATTACHMENT0_WEBGL,
+                ext3.COLOR_ATTACHMENT1_WEBGL
+            ];
+            ext3.drawBuffersWEBGL(bufferList);
+
+            drawFirstPassBokeh();
+
+            gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+            gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+
+            drawScreenTexture(MRTfbData.t[0], 0);
+            //drawSecondPassBokeh();
+        }
+
 		var currentlyPressedKeys = {};
 
 		function handleKeyDown(event) {
@@ -4471,7 +3296,8 @@
                     bokehStrength = 0.0;
                 }
             }
-            console.log("BOKEH STRENGTH: " + bokehStrength);
+            //console.log("BOKEH STRENGTH: " + bokehStrength);
+            console.log(elapsed);
 		}
 
 		function handleMouseMove(event) {
@@ -4610,16 +3436,65 @@
 
 		}
 
+        function setupMRT() {
+            ext3 = gl.getExtension('WEBGL_draw_buffers');
+            if (!ext3) {
+                alert("WEBGL_draw_buffers nor supported");
+            } else {
+                console.log("MAX_COLOR_ATTACHMENTS_WEBGL: "+gl.getParameter(ext3.MAX_COLOR_ATTACHMENTS_WEBGL));
+                console.log("MAX_DRAW_BUFFERS_WEBGL: " + gl.getParameter(ext3.MAX_DRAW_BUFFERS_WEBGL));
+
+                MRTfbData = create_framebuffer_MRT(gl.viewportWidth, gl.viewportHeight);
+            }
+        }
+
+        function create_framebuffer_MRT(width, height) {
+            var ext = gl.getExtension('OES_texture_float');
+            var ext2 = gl.getExtension('OES_texture_float_linear');
+
+            var frameBuffer = gl.createFramebuffer();
+
+            gl.bindFramebuffer(gl.FRAMEBUFFER, frameBuffer);
+
+            var fTexture = [];
+
+            for (var i = 0; i < 2; ++i) {
+                fTexture[i] = gl.createTexture();
+                gl.bindTexture(gl.TEXTURE_2D, fTexture[i]);
+                gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, width, height, 0, gl.RGBA, gl.FLOAT, null);
+
+                gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+                gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+                gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+                gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+
+                gl.framebufferTexture2D(gl.FRAMEBUFFER, ext3.COLOR_ATTACHMENT0_WEBGL + i, gl.TEXTURE_2D, fTexture[i], 0);
+            }
+
+            var depthRenderBuffer = gl.createRenderbuffer();
+            gl.bindRenderbuffer(gl.RENDERBUFFER, depthRenderBuffer);
+            gl.renderbufferStorage(gl.RENDERBUFFER, gl.DEPTH_COMPONENT16, width, height);
+            gl.framebufferRenderbuffer(gl.FRAMEBUFFER, gl.DEPTH_ATTACHMENT, gl.RENDERBUFFER, depthRenderBuffer);
+
+            gl.bindTexture(gl.TEXTURE_2D, null);
+            gl.bindRenderbuffer(gl.RENDERBUFFER, null);
+            gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+
+            return {
+                f: frameBuffer,
+                d: depthRenderBuffer,
+                t: fTexture
+            };
+        }
+
         function initSphereObject() {
             sphereGeomParams = uvSphere(0.6,64,32);
             console.log("SPHERE GEOM COMPUTED");
         }
 
-
 		function webGLStart() {
 			var canvas = document.getElementById("3D_scene-canvas");
 			initGL(canvas);
-			initShaders();
 			initShadersFocalPlane();
 			initShadersDepth();
 			initShadersFocalDepth();
@@ -4634,22 +3509,22 @@
             initShadersRendToText();
             initShadersDepthObjectSpace();
 
-			initShaderBufferA();
-			initshaderBufferB();
-			initshaderBufferC();
-			initshaderBufferD();
+			//initShaderBufferA();
+			//initshaderBufferB();
+			//initshaderBufferC();
+			//initshaderBufferD();
 
-			initShaderBufferImage();
+			//initShaderBufferImage();
 			initScreenFillingBuffers();
 
-            initShadersFirstPassOpticalBokehVertical();
-            initShadersFirstPassOpticalBokehDiagonal();
-            initShadersSecondPassOpticalBokehDiagonalLeft();
-            initShadersSecondPassOpticalBokehDiagonalRight();
-            initShadersFirstPassCombined();
-            initShadersBokehCombinedPasses();
+            //initShadersFirstPassOpticalBokehVertical();
+            //initShadersFirstPassOpticalBokehDiagonal();
+            //initShadersSecondPassOpticalBokehDiagonalLeft();
+            //initShadersSecondPassOpticalBokehDiagonalRight();
+            //initShadersFirstPassCombined();
+            //initShadersBokehCombinedPasses();
 
-            initShadersHdrColor();
+            //initShadersHdrColor();
 
 			createFramebuffers();
 
@@ -4657,6 +3532,10 @@
 
 			init3DScene();
 			//loadTeapot();
+
+            setupMRT();
+            initShadersFirstPassBlur();
+            initShadersSecondPassBlur();
 
 			gl.clearColor(0.0, 0.0, 0.0, 1.0);
 			gl.enable(gl.DEPTH_TEST);
