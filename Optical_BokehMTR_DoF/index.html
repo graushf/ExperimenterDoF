@@ -107,7 +107,7 @@
                 diffuse = light.diffuse * diff * light.diffuse;    
             }
            
-            vec3 specular = light.specular * spec * lightColor;
+            vec3 specular = light.specular * spec * light.diffuse;
 
             return (ambient + diffuse + specular);
             //return specular;
@@ -128,13 +128,14 @@
             float attenuation = 1.0 / (light.constant + light.linear * distance + light.quadratic * (distance * distance));
 
             // combine results
-            vec3 ambient = light.ambient * light.diffuse;
-            vec3 diffuse = light.diffuse * diff * light.diffuse;
-            vec3 specular = light.specular * spec * lightColor;
+            vec3 ambient = light.ambient * lightColor;
+            vec3 diffuse = lightColor* diff * lightColor;
+            vec3 specular = light.specular * spec * light.diffuse;
             ambient *= attenuation;
             diffuse *= attenuation;
             specular *= attenuation;
-            return (ambient + diffuse + specular);
+            return (diffuse + specular);
+            //return vec3(0.0, 1.0, 0.0);
             //return ambient;
             //return diffuse;
             //return specular;
@@ -1694,10 +1695,10 @@
             var _pitch = 13.75;
             var _yaw = -90.0;
             myCamera.SetPositionAndDirectionCamera(_pos, _pitch, _yaw);
-			_pos = vec3.fromValues(0.0, 0.0, 10.0);
-            _pitch = 0.0;
-            _yaw = -90.0;
-            myCamera.SetPositionAndDirectionCamera(_pos, _pitch, _yaw);
+			//_pos = vec3.fromValues(0.0, 0.0, 10.0);
+            //_pitch = 0.0;
+            //_yaw = -90.0;
+            //myCamera.SetPositionAndDirectionCamera(_pos, _pitch, _yaw);
 
             lastX = gl.viewportWidth / 2.0;
 			lastY = gl.viewportHeight / 2.0;
@@ -1721,50 +1722,50 @@
 
 			pMatrix = myCamera.GetProjectionMatrix();
 
-			if (programShading == shaderProgram) {
-				gl.enableVertexAttribArray(programShading.vertexPositionAttribute);
-				gl.enableVertexAttribArray(programShading.vertexNormalAttribute);
-				gl.enableVertexAttribArray(programShading.textureCoordAttribute);
-				gl.uniform1i(programShading.showSpecularHighlightsUniform, 1);
-				var lighting = 1;
-				gl.uniform1i(programShading.useLightingUniform, lighting);
+			// if (programShading == shaderProgram) {
+			// 	gl.enableVertexAttribArray(programShading.vertexPositionAttribute);
+			// 	gl.enableVertexAttribArray(programShading.vertexNormalAttribute);
+			// 	gl.enableVertexAttribArray(programShading.textureCoordAttribute);
+			// 	gl.uniform1i(programShading.showSpecularHighlightsUniform, 1);
+			// 	var lighting = 1;
+			// 	gl.uniform1i(programShading.useLightingUniform, lighting);
 
-				if (lighting) {
-					gl.uniform3f(
-						programShading.ambientColorUniform,
-						0.2, 0.2, 0.2
-					);
+			// 	if (lighting) {
+			// 		gl.uniform3f(
+			// 			programShading.ambientColorUniform,
+			// 			0.2, 0.2, 0.2
+			// 		);
 
-					gl.uniform3f(
-						programShading.pointLightingLocationUniform, 
-						-10.0, 4.0, -20.0
-					);
+			// 		gl.uniform3f(
+			// 			programShading.pointLightingLocationUniform, 
+			// 			-10.0, 4.0, -20.0
+			// 		);
 
-					gl.uniform3f(
-						programShading.pointLightingSpecularColorUniform,
-						0.8, 0.8, 0.8
-					);
+			// 		gl.uniform3f(
+			// 			programShading.pointLightingSpecularColorUniform,
+			// 			0.8, 0.8, 0.8
+			// 		);
 
-					gl.uniform3f(
-						programShading.pointLightingDiffuseColorUniform,
-						0.8, 0.8, 0.8
-					);
-				}
+			// 		gl.uniform3f(
+			// 			programShading.pointLightingDiffuseColorUniform,
+			// 			0.8, 0.8, 0.8
+			// 		);
+			// 	}
 				
-				gl.uniform1i(programShading.useTexturesUniform, 0);	
+			// 	gl.uniform1i(programShading.useTexturesUniform, 0);	
 
-				gl.activeTexture(gl.TEXTURE0);
-				gl.bindTexture(gl.TEXTURE_2D, galvanizedTexture);
-				gl.uniform1i(programShading.samplerUniform, 0);
+			// 	gl.activeTexture(gl.TEXTURE0);
+			// 	gl.bindTexture(gl.TEXTURE_2D, galvanizedTexture);
+			// 	gl.uniform1i(programShading.samplerUniform, 0);
 
-				gl.uniform1f(programShading.materialShininessUniform, 64.0);
+			// 	gl.uniform1f(programShading.materialShininessUniform, 64.0);
 
-				gl.bindBuffer(gl.ARRAY_BUFFER, teapotVertexTextureCoordBuffer);
-				gl.vertexAttribPointer(programShading.textureCoordAttribute, teapotVertexTextureCoordBuffer.itemSize, gl.FLOAT, false, 0, 0);
+			// 	gl.bindBuffer(gl.ARRAY_BUFFER, teapotVertexTextureCoordBuffer);
+			// 	gl.vertexAttribPointer(programShading.textureCoordAttribute, teapotVertexTextureCoordBuffer.itemSize, gl.FLOAT, false, 0, 0);
 
-				gl.bindBuffer(gl.ARRAY_BUFFER, teapotVertexNormalBuffer);
-				gl.vertexAttribPointer(programShading.vertexNormalAttribute, teapotVertexNormalBuffer.itemSize, gl.FLOAT, false, 0, 0);
-			}
+			// 	gl.bindBuffer(gl.ARRAY_BUFFER, teapotVertexNormalBuffer);
+			// 	gl.vertexAttribPointer(programShading.vertexNormalAttribute, teapotVertexNormalBuffer.itemSize, gl.FLOAT, false, 0, 0);
+			// }
 			if (programShading == shaderProgramDepth) {
 				gl.enableVertexAttribArray(programShading.vertexPositionAttribute);
 				gl.disableVertexAttribArray(shaderProgram.vertexNormalAttribute);
@@ -1822,13 +1823,11 @@
 
                 gl.uniform3f(gl.getUniformLocation(programShading, "pointLights[0].position"), lightPointPos[0], lightPointPos[1], lightPointPos[2]);
                 gl.uniform3f(gl.getUniformLocation(programShading, "pointLights[0].ambient"), 1.00, 0.05, 0.05);
-                gl.uniform3f(gl.getUniformLocation(programShading, "pointLights[0].diffuse"), 0.0, 0.0, 0.0);
+                gl.uniform3f(gl.getUniformLocation(programShading, "pointLights[0].diffuse"), 100 * 181/255, 20 * 134/255, 20 * 144/255);
                 gl.uniform3f(gl.getUniformLocation(programShading, "pointLights[0].specular"), 5.0, 5.0, 5.0);
                 gl.uniform1f(gl.getUniformLocation(programShading, "pointLights[0].constant"), 1.0);
                 gl.uniform1f(gl.getUniformLocation(programShading, "pointLights[0].linear"), 0.02);
                 gl.uniform1f(gl.getUniformLocation(programShading, "pointLights[0].quadratic"), 0.010);
-
-
 
                 gl.bindBuffer(gl.ARRAY_BUFFER, teapotVertexNormalBuffer);
                 gl.vertexAttribPointer(programShading.vertexNormalAttribute, teapotVertexNormalBuffer.itemSize, gl.FLOAT, false, 0, 0);
@@ -1868,52 +1867,52 @@
 			//mat4.perspectiveAlt(45, gl.viewportWidth / gl.viewportHeight, 0.1, 500.0, pMatrix);
 			pMatrix = myCamera.GetProjectionMatrix();
 
-			if (programShading == shaderProgram) {
-				gl.enableVertexAttribArray(programShading.vertexPositionAttribute);
-				gl.enableVertexAttribArray(programShading.vertexNormalAttribute);
-				gl.enableVertexAttribArray(programShading.textureCoordAttribute);
+			// if (programShading == shaderProgram) {
+			// 	gl.enableVertexAttribArray(programShading.vertexPositionAttribute);
+			// 	gl.enableVertexAttribArray(programShading.vertexNormalAttribute);
+			// 	gl.enableVertexAttribArray(programShading.textureCoordAttribute);
 
-				gl.uniform1i(programShading.showSpecularHighlightsUniform, 1);
-				var lighting = 1;
-				gl.uniform1i(programShading.useLightingUniform, lighting);
+			// 	gl.uniform1i(programShading.showSpecularHighlightsUniform, 1);
+			// 	var lighting = 1;
+			// 	gl.uniform1i(programShading.useLightingUniform, lighting);
 
-				if (lighting) {
-					gl.uniform3f(
-						programShading.ambientColorUniform,
-						0.2, 0.2, 0.2
-					);
+			// 	if (lighting) {
+			// 		gl.uniform3f(
+			// 			programShading.ambientColorUniform,
+			// 			0.2, 0.2, 0.2
+			// 		);
 
-					gl.uniform3f(
-						programShading.pointLightingLocationUniform, 
-						-10.0, 4.0, -20.0
-					);
+			// 		gl.uniform3f(
+			// 			programShading.pointLightingLocationUniform, 
+			// 			-10.0, 4.0, -20.0
+			// 		);
 
-					gl.uniform3f(
-						programShading.pointLightingSpecularColorUniform,
-						0.8, 0.8, 0.8
-					);
+			// 		gl.uniform3f(
+			// 			programShading.pointLightingSpecularColorUniform,
+			// 			0.8, 0.8, 0.8
+			// 		);
 
-					gl.uniform3f(
-						programShading.pointLightingDiffuseColorUniform,
-						0.8, 0.8, 0.8
-					);
-				}
+			// 		gl.uniform3f(
+			// 			programShading.pointLightingDiffuseColorUniform,
+			// 			0.8, 0.8, 0.8
+			// 		);
+			// 	}
 
-				gl.uniform1i(programShading.useTexturesUniform, 1);
+			// 	gl.uniform1i(programShading.useTexturesUniform, 1);
 
-				gl.activeTexture(gl.TEXTURE0);
-				gl.bindTexture(gl.TEXTURE_2D, checkerGrayTexture);
-				gl.uniform1i(programShading.samplerUniform, 0);
+			// 	gl.activeTexture(gl.TEXTURE0);
+			// 	gl.bindTexture(gl.TEXTURE_2D, checkerGrayTexture);
+			// 	gl.uniform1i(programShading.samplerUniform, 0);
 
-				gl.uniform1f(programShading.materialShininessUniform, 32.0);
+			// 	gl.uniform1f(programShading.materialShininessUniform, 32.0);
 
-				gl.bindBuffer(gl.ARRAY_BUFFER, planeVertexTextureCoordBuffer);
-				gl.vertexAttribPointer(programShading.textureCoordAttribute, planeVertexTextureCoordBuffer.itemSize, gl.FLOAT, false, 0, 0);
+			// 	gl.bindBuffer(gl.ARRAY_BUFFER, planeVertexTextureCoordBuffer);
+			// 	gl.vertexAttribPointer(programShading.textureCoordAttribute, planeVertexTextureCoordBuffer.itemSize, gl.FLOAT, false, 0, 0);
 
-				gl.bindBuffer(gl.ARRAY_BUFFER, planeVertexNormalBuffer);
-				gl.vertexAttribPointer(programShading.vertexNormalAttribute, planeVertexNormalBuffer.itemSize, gl.FLOAT, false, 0, 0);
+			// 	gl.bindBuffer(gl.ARRAY_BUFFER, planeVertexNormalBuffer);
+			// 	gl.vertexAttribPointer(programShading.vertexNormalAttribute, planeVertexNormalBuffer.itemSize, gl.FLOAT, false, 0, 0);
 
-			}
+			// }
 			if (programShading == shaderProgramDepth) {
 				gl.enableVertexAttribArray(programShading.vertexPositionAttribute);
 				gl.disableVertexAttribArray(shaderProgram.vertexNormalAttribute);
@@ -2190,15 +2189,10 @@
             gl.drawElements(gl.TRIANGLES, sphereVertexIndexBuffer.numItems, gl.UNSIGNED_SHORT, 0);
         }
 
-
-
-
-
 		function drawScene(programToDraw) {
 			gl.viewport(0, 0, gl.viewportWidth, gl.viewportHeight);
 			gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
 
-			
 			drawPlane(programToDraw);
 			drawTeapot(programToDraw, vec3.fromValues(0, 8.0, 400.0));
 			drawTeapot(programToDraw, vec3.fromValues(0, 8.0, 100.0));
@@ -2208,22 +2202,21 @@
 			drawTeapot(programToDraw, vec3.fromValues(0, 8.0, -300));
 			drawTeapot(programToDraw, vec3.fromValues(0, 8.0, -800));
 
+            drawSphere(programToDraw, vec3.fromValues(lightPointPos[0], lightPointPos[1], lightPointPos[2]), vec3.fromValues(2.0, 2.0, 2.0), vec3.fromValues(100 * 181/255, 20 * 134/255, 20 * 144/255));
 
-            drawSphere(programToDraw, vec3.fromValues(lightPointPos[0], lightPointPos[1], lightPointPos[2]), vec3.fromValues(2.0, 2.0, 2.0));
+            drawSphere(programToDraw, vec3.fromValues(0,55,0), vec3.fromValues(2.0, 2.0, 2.0), vec3.fromValues(181/255, 20 * 134/255, 80 * 144/255));
+            drawSphere(programToDraw, vec3.fromValues(0,40,-20), vec3.fromValues(2.0, 2.0, 2.0), vec3.fromValues(10 * 214/255, 10 * 211/255, 10 * 218/255));
+            drawSphere(programToDraw, vec3.fromValues(20,30,-40), vec3.fromValues(2.0, 2.0, 2.0), vec3.fromValues(10 * 242/255, 10 * 240/255, 10 * 241/255));
+            drawSphere(programToDraw, vec3.fromValues(-30,20,-60), vec3.fromValues(2.0, 2.0, 2.0), vec3.fromValues(10 * 57/255, 10 * 93/255, 10 * 109/255));
+            drawSphere(programToDraw, vec3.fromValues(-50,40,-120), vec3.fromValues(2.0, 2.0, 2.0), vec3.fromValues(10 * 62/255, 10 * 101/255, 10 * 54/255));
+            drawSphere(programToDraw, vec3.fromValues(-80,25,-200), vec3.fromValues(2.0, 2.0, 2.0), vec3.fromValues(10 * 197/255, 10 * 197/255, 10 * 197/255));
 
-            drawSphere(programToDraw, vec3.fromValues(0,55,0), vec3.fromValues(2.0, 2.0, 2.0));
-            drawSphere(programToDraw, vec3.fromValues(0,40,-20), vec3.fromValues(2.0, 2.0, 2.0));
-            drawSphere(programToDraw, vec3.fromValues(20,30,-40), vec3.fromValues(2.0, 2.0, 2.0));
-            drawSphere(programToDraw, vec3.fromValues(-30,20,-60), vec3.fromValues(2.0, 2.0, 2.0));
-            drawSphere(programToDraw, vec3.fromValues(-50,40,-120), vec3.fromValues(2.0, 2.0, 2.0));
-            drawSphere(programToDraw, vec3.fromValues(-80,25,-200), vec3.fromValues(2.0, 2.0, 2.0));
-
-            drawSphere(programToDraw, vec3.fromValues(20,55,-50), vec3.fromValues(2.0, 2.0, 2.0));
-            drawSphere(programToDraw, vec3.fromValues(-10,40,-90), vec3.fromValues(2.0, 2.0, 2.0));
-            drawSphere(programToDraw, vec3.fromValues(50,30,-100), vec3.fromValues(2.0, 2.0, 2.0));
-            drawSphere(programToDraw, vec3.fromValues(-60,20,-105), vec3.fromValues(2.0, 2.0, 2.0));
-            drawSphere(programToDraw, vec3.fromValues(-50,40,-120), vec3.fromValues(2.0, 2.0, 2.0));
-            drawSphere(programToDraw, vec3.fromValues(-35,25,-200), vec3.fromValues(2.0, 2.0, 2.0));
+            drawSphere(programToDraw, vec3.fromValues(20,55,-50), vec3.fromValues(2.0, 2.0, 2.0), vec3.fromValues(10 * 142/255, 10 * 90/255, 10 * 92/255));
+            drawSphere(programToDraw, vec3.fromValues(-10,40,-90), vec3.fromValues(2.0, 2.0, 2.0), vec3.fromValues(10 * 83/255, 10 * 79/255, 10 * 114/255));
+            drawSphere(programToDraw, vec3.fromValues(50,30,-100), vec3.fromValues(2.0, 2.0, 2.0), vec3.fromValues(10 * 132/255, 10 * 86/255, 10 * 133/255));
+            drawSphere(programToDraw, vec3.fromValues(-60,20,-105), vec3.fromValues(2.0, 2.0, 2.0), vec3.fromValues(10 * 132/255, 10 * 86/255, 10 * 133/255));
+            drawSphere(programToDraw, vec3.fromValues(-50,40,-120), vec3.fromValues(2.0, 2.0, 2.0), vec3.fromValues(10 * 132/255, 10 * 86/255, 10 * 133/255));
+            drawSphere(programToDraw, vec3.fromValues(-35,25,-200), vec3.fromValues(2.0, 2.0, 2.0), vec3.fromValues(10 * 132/255, 10 * 86/255, 10 * 133/255));
 			
 		}
 
@@ -3219,7 +3212,8 @@
             gl.bindFramebuffer(gl.FRAMEBUFFER, framebufferSetupSceneRGBA32F);
             gl.viewport(0, 0, gl.viewportWidth, gl.viewportHeight);
 
-            drawHDRBokehScene2D(shaderProgramLightingPhong);
+            //drawHDRBokehScene2D(shaderProgramLightingPhong);
+            drawScene(shaderProgramLightingPhong);
 
             gl.bindFramebuffer(gl.FRAMEBUFFER, MRTfbData.f);
 
