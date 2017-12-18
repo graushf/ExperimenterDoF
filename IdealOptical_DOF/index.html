@@ -395,48 +395,23 @@
         uniform sampler2D colorChannel;
         uniform sampler2D depthChannel;
 
-        uniform uApertureCoefficient;
+        uniform float uApertureCoefficient;
         uniform float uScreenPos;
-        uniform float uFocalLen
-        uniform uCoefficientStrenghOffset;
+        uniform float uFocalLength;
+        //uniform uCoefficientStrenghOffset;
 
         varying vec2 vTextureCoord;
 
-        vec3 UniformDistribution(float CoC_diameter) {
-            float r = CoC_diameter/2.0;
-            float a = M_PI * pow(r,2);
-
-            float offset = r / uCoefficientStrenghOffset;
-
-            float stepSize = (2 * r) / NUM_SAMPLES;
-
-            vec2 sampleStepping = vec2((-NUM_SAMPLES/2.0)*stepSize);
-
-            vec3 intensity = vec3(texture2D(colorChannel, vTextureCoord));
-
-            // vec2 p - gl_FragCoord.xy / screenDim_.xy;
-            // vec2 cirleCenter = vec2(0.5, 0.5);
-            //float dist = length(p  - circleCenter );
-            float circle = smoothstep(circle)
-
-
-            // for (int i = 0; i > NUM_SAMPLES; i++) 
-            // {
-
-            // }
-
-            for ()
-        }
-
-
+        
         void main(void) {
             float pixelDepth = vec3(texture2D(depthChannel, vTextureCoord)).x;
 
-            float CoC_diameter = abs(uApertureCoefficient * (uScreenPos * (1.0/uFocalLen - 1.0/pixelDepth) - 1));
+            float CoC_diameter = abs(uApertureCoefficient * (uScreenPos * (1.0/uFocalLength - 1.0/pixelDepth) - 1.0));
             
-            colorOutput = UniformDistribution(CoC_diameter);
-
-            gl_FragColor = vec4(colorOutput, 1.0);
+            //colorOutput = UniformDistribution(CoC_diameter);
+            vec3 colorOutput = vec3(1.0, 0.0, 0.0);
+            //gl_FragColor = vec4(texture2D(depthChannel, vTextureCoord).xyz, 1.0);
+            gl_FragColor = vec4(CoC_diameter, 0.0, 0.0, 1.0);
         }
 
     </script>
@@ -486,827 +461,6 @@
 
     </script>
 
-	<script id="shader-fs-bokeh-BufferA" type="x-shader/x-fragment">
-        precision mediump float;
-
-        //screen filling texture
-        uniform sampler2D uSampler;
-
-        uniform sampler2D uSamplerFocalDepth;
-
-        uniform float bokehStrength;
-
-        varying vec2 vTextureCoord;
-
-        #define M_PI 3.1415926535897932384626433832795
-
-        #define USE_RANDOM
-
-        const vec2 blurdir = vec2(0.0, 1.0);
-        // ===
-        const float blurdist_px = 64.0;
-        const int NUM_SAMPLES = 16;
-
-        const float THRESHOLD = 0.1;
-        const float MULT = 2.0;
-
-        uniform vec3 iResolution; // The viewport resolution (z is pixel aspect ratio, usually 1.0)
-        uniform float iTime; // Current time in seconds
-
-        uniform int uEnableDepthBokeh;
-
-        struct MedianStruct 
-        {
-            float greyval;
-            vec3 color_rgb;
-        };
-
-        //#define GAMMA_SRGB
-        #if defined( GAMMA_SRGB )
-        // see http://www.opengl.org/registry/specs/ARB/framebuffer_sRGB.txt
-        vec3 srgb2lin( vec3 cs )
-        {
-            vec3 c_lo = cs / 12.92;
-            vec3 c_hi = pow( (cs + 0.055) / 1.055, vec3(2.4) );
-            vec3 s = step(vec3(0.04045), cs);
-            return mix( c_lo, c_hi, s );
-        }
-
-        vec3 lin2srgb( vec3 cl )
-        {
-            // cl = clamp( cl, 0.0, 1.0 );
-            vec3 c_lo = 12.92 * cl;
-            vec3 c_hi = 1.055 * pow(cl, vec3(0.41666)) - 0.055;
-            vec3 s = step( vec3(0.0031308), cl );
-            return mix( c_lo, c_hi, s );
-        }
-        #else 
-        vec3 srgb2lin(vec3 c) { return c*c; }
-        vec3 lin2srgb(vec3 c) { return sqrt(c); }
-        #endif // GAMMA_SRGB
-
-        // note: uniform pdf ranf [0;1[
-        float hash12n(vec2 p) 
-        {
-            p = fract(p * vec2(5.3987, 5.4421));
-            p += dot(p.yx, p.xy + vec2(21.5351, 14.3137));
-            return fract(p.x * p.y * 95.4307);
-        }
-
-        vec4 pattern( vec2 p )
-        {
-            float aspect = iResolution.x/iResolution.y;
-            float p0 = step(abs(p.x - 0.125), 0.01) * step(abs(p.y - 0.27), 0.01);
-            float p1 = step( length( p - vec2(0.125, 0.45) ), 0.025 );
-
-            float p2_0 = step( length(p - vec2(0.08, 0.14) ), 0.0125 );
-            float p2_1 = step( length(p - vec2(0.16, 0.125) ), 0.0125);
-            float p2_2 = step( length(p - vec2(0.1, 0.07) ), 0.0125 );
-            float p2 = max(p2_0, max(p2_1, p2_2));
-
-            return vec4( max(p0, max(p1, p2) ) );
-        }
-
-        vec3 sampletex( vec2 uv ) 
-        {
-            //return srgb2lin( texture2D(uSampler, uv, -10.0).rgb );
-            return texture2D(uSampler, uv).rgb;
-        }
-
-        float sampleGaussian(int samplepoint) {
-            int smplGaussian = samplepoint / (NUM_SAMPLES);
-            float weight = (1.0 / sqrt(2.0*M_PI)) * exp(-1.0*pow(float(smplGaussian), 2.0) / 2.0);
-            return weight;
-        }
-
-        void interchangesort(inout MedianStruct arraySamples[NUM_SAMPLES]) {
-            const int lengthOfArray = NUM_SAMPLES;
-            // we use an anidated loop
-            for (int i = 0; i < lengthOfArray; i++) {
-                for (int j = 0; j < lengthOfArray; j++) {
-                    if (arraySamples[i].greyval > arraySamples[j].greyval) {
-                        // Interchange of values
-                        MedianStruct auxvar = arraySamples[i];
-                        arraySamples[i] = arraySamples[j];
-                        arraySamples[j] = auxvar;
-                    }
-                }
-            }
-        }
-
-        vec3 medianFilter(MedianStruct arraySamples[NUM_SAMPLES]) {
-             interchangesort(arraySamples);
-             const int i = 15;
-             const int medianPositionFilter = int(NUM_SAMPLES / 2);
-             return (arraySamples[medianPositionFilter].color_rgb);
-             //return(vec3(1.0, 0.0, 0.0));
-        }
-
-
-        void main(void) {
-            vec2 blurvec = normalize(blurdir) / iResolution.xy;
-            vec2 uv = gl_FragCoord.xy / iResolution.xy;
-
-
-            float paramBokehQuantity = 0.0;
-            if (uEnableDepthBokeh == 0) 
-            {
-                //paramBokehQuantity = (0.55 + 0.45 * sin(5.0 * uv.x + iTime ) );    
-                paramBokehQuantity = 1.0;
-            } else {
-                paramBokehQuantity = texture2D(uSamplerFocalDepth, vTextureCoord).x;  
-            }
-            
-            float ammountBlur = bokehStrength * paramBokehQuantity;
-            
-
-            //ammountBlur = bokehStrength;
-            float blurdist = blurdist_px * ammountBlur;
-
-            vec2 p0 = uv;
-            vec2 p1 = uv + blurdist * blurvec;
-            vec2 stepvec = (p1-p0) / float(NUM_SAMPLES);
-            vec2 p = p0;
-
-            #if defined(USE_RANDOM)
-            p +=  (hash12n(uv + fract(iTime)+0.1)) * stepvec;
-            #endif
-
-            vec3 sumcol = vec3(0.0);
-            float firstSampleWeight = 0.5;
-            float restOfSamplesWeights = (1.0 - firstSampleWeight)/float(NUM_SAMPLES);
-
-            //firstSampleWeight = 1.0 / (float(NUM_SAMPLES)*1.0);
-            //restOfSamplesWeights = firstSampleWeight;
-            vec3 color_init = vec3(0.0, 1.0, 0.0);
-            float acum = 0.0;
-            MedianStruct arraySamples[NUM_SAMPLES];
-
-            for (int i=0; i < NUM_SAMPLES; ++i)
-            {
-                
-                vec3 smpl = sampletex(p);
-                //color_init = vec3(0.0, 1.0, 0.0);
-                //sumcol += smpl;
-                //if (i == 0) {
-                //    color_init = smpl;
-                //    sumcol += firstSampleWeight*smpl;
-                //}
-                //if (i > 0) {
-                //    sumcol += restOfSamplesWeights*smpl;
-                //}
-
-                //if(i == 8) {
-                //    color_init = smpl;
-                //}
-                float weightSmpl = sampleGaussian(i);
-                //float weightSmpl = 1.0;
-                sumcol += weightSmpl * smpl;
-                acum += weightSmpl;
-
-                arraySamples[i].greyval = (smpl.x + smpl.y + smpl.z)/3.0;
-                arraySamples[i].color_rgb = vec3(smpl.x, smpl.y, smpl.z);
-
-                p += stepvec;
-            }
-            sumcol = medianFilter(arraySamples);
-            //sumcol /= float(NUM_SAMPLES);
-            //sumcol /= acum;
-
-            //gl_FragColor = vec4( lin2srgb(sumcol * MULT), 1.0);
-            //gl_FragColor = vec4(color_init, 1.0); return;
-            gl_FragColor = vec4( sumcol, 1.0);
-        }
-    </script>
-
-    <script id="shader-fs-bokeh-BufferB" type="x-shader/x-fragment">
-        precision mediump float;
-
-        // screen filling texture
-        uniform sampler2D uSampler;
-        uniform sampler2D uSamplerFocalDepth;
-
-        uniform float bokehStrength;
-
-        varying vec2 vTextureCoord;
-
-        #define M_PI 3.1415926535897932384626433832795
-        #define USE_RANDOM
-
-        const vec2 blurdir = vec2( 1.0, -0.577350269189626 );
-
-        // ===
-
-        const float blurdist_px = 64.0;
-        const int NUM_SAMPLES = 16;
-
-        const float MULT = 2.0;
-
-        uniform vec3 iResolution; // The viewport resolution (z is pixel aspect ratio, usually 1.0)
-        uniform float iTime;    // Current time in seconds
-
-        uniform int uEnableDepthBokeh;
-
-        struct MedianStruct 
-        {
-            float greyval;
-            vec3 color_rgb;
-        };
-
-        //#define GAMMA_SRGB
-        #if defined( GAMMA_SRGB )
-        vec3 srgb2lin( vec3 cs )
-        {
-            vec3 c_lo = cs / 12.92;
-            vec3 c_hi = pow( (cs + 0.055) / 1.055, vec3(2.4) );
-            vec3 s = step(vec3(0.04045), cs);
-            return mix( c_lo, c_hi, s );
-        }
-        vec3 lin2srgb( vec3 cl )
-        {
-            //cl = clamp(cl, 0.0, 1.0);
-            vec3 c_lo = 12.92 * cl;
-            vec3 c_hi = 1.055 * pow(cl, vec3(0.41666)) - 0.055;
-            vec3 s = step( vec3(0.0031308), cl);
-            return mix( c_lo, c_hi, s);
-        }
-        #else
-        vec3 srgb2lin(vec3 c) { return c*c; }
-        vec3 lin2srgb(vec3 c) { return sqrt(c); }
-        #endif //GAMMA_SRGB
-
-        //note uniform pdf rand [0;1[
-        float hash12n(vec2 p)
-        {
-            p = fract(p * vec2(5.3987, 5.4421));
-            p += dot(p.yx, p.xy + vec2(21.5351, 14.3137));
-            return fract(p.x * p.y * 95.4307);
-        }
-
-        vec4 pattern( vec2 p )
-        {
-            float aspect = iResolution.x/iResolution.y;
-            float p0 = step(abs(p.x - 0.125), 0.01) * step(abs(p.y - 0.27), 0.01);
-            float p1 = step( length( p - vec2(0.125, 0.45) ), 0.025 );
-
-            float p2_0 = step( length( p - vec2(0.08, 0.14) ), 0.0125);
-            float p2_1 = step( length( p-vec2(0.16, 0.125) ), 0.0125);
-            float p2_2 = step( length( p-vec2(0.1, 0.07) ), 0.0125);
-            float p2 = max(p2_0, max(p2_1, p2_2));
-
-            return vec4( max( p0, max(p1, p2) ) );
-        }
-
-        vec3 sampletex( vec2 uv )
-        {
-            return texture2D(uSampler, uv).rgb;
-        }
-
-        float sampleGaussian(int samplepoint) {
-            int smplGaussian = samplepoint / (NUM_SAMPLES);
-            float weight = (1.0 / sqrt(2.0*M_PI)) * exp(-1.0*pow(float(smplGaussian), 2.0) / 2.0);
-            return weight;
-        }
-
-        void interchangesort(inout MedianStruct arraySamples[NUM_SAMPLES]) {
-            const int lengthOfArray = NUM_SAMPLES;
-            // we use an anidated loop
-            for (int i = 0; i < lengthOfArray; i++) {
-                for (int j = 0; j < lengthOfArray; j++) {
-                    if (arraySamples[i].greyval > arraySamples[j].greyval) {
-                        // Interchange of values
-                        MedianStruct auxvar = arraySamples[i];
-                        arraySamples[i] = arraySamples[j];
-                        arraySamples[j] = auxvar;
-                    }
-                }
-            }
-        }
-
-        vec3 medianFilter(MedianStruct arraySamples[NUM_SAMPLES]) {
-             interchangesort(arraySamples);
-             const int i = 15;
-             const int medianPositionFilter = int(NUM_SAMPLES / 2);
-             return (arraySamples[medianPositionFilter].color_rgb);
-        }
-
-
-        void main(void) {
-            vec2 blurvec = normalize(blurdir) / iResolution.xy;
-            vec2 uv = gl_FragCoord.xy / iResolution.xy;
-
-            float paramBokehQuantity = 0.0;
-            if (uEnableDepthBokeh == 0) 
-            {
-                //paramBokehQuantity = ( 0.55 + 0.45 * sin( 5.0 * uv.x + iTime ) );
-                paramBokehQuantity = 1.0;
-            } else {
-                paramBokehQuantity = texture2D(uSamplerFocalDepth, vTextureCoord).x;
-            }
-
-            float ammountBlur = bokehStrength * paramBokehQuantity;
-            
-            float blurdist = blurdist_px * ammountBlur;
-
-            vec2 p0 = uv;
-            vec2 p1 = uv + blurdist * blurvec;
-            vec2 stepvec = (p1-p0) / float(NUM_SAMPLES);
-            vec2 p = p0;
-
-            #if defined(USE_RANDOM)
-            p += (hash12n(uv+fract(iTime)+0.1)) * stepvec;
-            #endif
-
-            vec3 sumcol = vec3(0.0);
-            float firstSampleWeight = 0.3;
-            float restOfSampleWeights = (1.0 - firstSampleWeight)/float(NUM_SAMPLES);
-
-            firstSampleWeight = 1.0 / (float(NUM_SAMPLES)*0.4);
-            restOfSampleWeights = firstSampleWeight;
-            float acum = 0.0;
-            MedianStruct arraySamples[NUM_SAMPLES];
-
-            for (int i=0; i<NUM_SAMPLES;++i)
-            {
-                
-                vec3 smpl = sampletex(p);
-                float weightSmpl = sampleGaussian(i);
-                sumcol += weightSmpl*smpl;
-                acum += weightSmpl;
-
-                arraySamples[i].greyval = (smpl.x + smpl.y + smpl.z)/3.0;
-                arraySamples[i].color_rgb = vec3(smpl.x, smpl.y, smpl.z);
-
-                p += stepvec;
-            }
-            sumcol = medianFilter(arraySamples);
-            //sumcol /= float(NUM_SAMPLES);
-            //sumcol /= acum;
-
-            gl_FragColor = vec4( sumcol, 1.0 );
-        }
-    </script>
-
-    <script id="shader-fs-bokeh-BufferC" type="x-shader/x-fragment">
-        precision mediump float;
-
-        uniform sampler2D iChannel0;
-        uniform sampler2D uSamplerFocalDepth;
-
-        uniform float bokehStrength;
-
-        varying vec2 vTextureCoord;
-
-        #define M_PI 3.1415926535897932384626433832795
-        #define USE_RANDOM
-
-        const vec2 blurdir = vec2( -1.0, -0.577350269189626 );
-
-        // ===
-        const float blurdist_px = 64.0;
-        const int NUM_SAMPLES = 16;
-
-        uniform vec3 iResolution;
-        uniform float iTime;
-
-        uniform int uEnableDepthBokeh;
-
-        struct MedianStruct 
-        {
-            float greyval;
-            vec3 color_rgb;
-        };
-
-        //#define GAMMA_SRGB
-        #if defined ( GAMMA_SRGB )
-
-        vec3 srgb2lin( vec3 cs )
-        {
-            vec3 c_lo = cs / 12.92;
-            vec3 c_hi = pow( (cs + 0.055) / 1.055, vec3(2.4) );
-            vec3 s = step(vec3(0.04045), cs);
-            return mix( c_lo, c_hi, s);
-        }
-
-        vec3 lin2srgb( vec3 cl )
-        {
-            //cl = clamp( cl, 0.0, 1.0 );
-            vec3 c_lo = 12.92 * cl;
-            vec3 c_hi = 1.055 * pow(cl, vec3(0.41666)) - 0.055;
-            vec3 s = step(vec3(0.0031308), cl);
-            return mix( c_lo, c_hi, s);
-        }
-        #else
-        vec3 srgb2lin(vec3 c) { return c*c; }
-        vec3 lin2srgb(vec3 c) { return sqrt(c); }
-        #endif //GAMMA_SRGB
-
-        //note: uniform pdf rand [0;1[
-        float hash12n(vec2 p)
-        {
-            p = fract(p * vec2(5.3987, 5.4421));
-            p += dot(p.yx, p.xy + vec2(21.5351, 14.3137));
-            return fract(p.x * p.y * 95.4307);
-        }
-
-        float sampleGaussian(int samplepoint) {
-            int smplGaussian = samplepoint / (NUM_SAMPLES);
-            float weight = (1.0 / sqrt(2.0*M_PI)) * exp(-1.0*pow(float(smplGaussian), 2.0) / 2.0);
-            return weight;
-        }
-
-        void interchangesort(inout MedianStruct arraySamples[NUM_SAMPLES]) {
-            const int lengthOfArray = NUM_SAMPLES;
-            // we use an anidated loop
-            for (int i = 0; i < lengthOfArray; i++) {
-                for (int j = 0; j < lengthOfArray; j++) {
-                    if (arraySamples[i].greyval > arraySamples[j].greyval) {
-                        // Interchange of values
-                        MedianStruct auxvar = arraySamples[i];
-                        arraySamples[i] = arraySamples[j];
-                        arraySamples[j] = auxvar;
-                    }
-                }
-            }
-        }
-
-        vec3 medianFilter(MedianStruct arraySamples[NUM_SAMPLES]) {
-             interchangesort(arraySamples);
-             const int i = 15;
-             const int medianPositionFilter = int(NUM_SAMPLES / 2);
-             return (arraySamples[medianPositionFilter].color_rgb);
-             //return(vec3(1.0, 0.0, 0.0));
-        }
-
-        void main()
-        {
-            vec2 blurvec = normalize(blurdir) / iResolution.xy;
-            vec2 uv = gl_FragCoord.xy / iResolution.xy;            
-
-            float paramBokehQuantity = 0.0;
-            if (uEnableDepthBokeh == 0) 
-            {
-                //paramBokehQuantity = (0.55 + 0.45 * sin( 5.0 * uv.x + iTime ) );
-                paramBokehQuantity = 1.0;
-            } else {
-                paramBokehQuantity = texture2D(uSamplerFocalDepth, vTextureCoord).x;
-            }
-
-            float ammountBlur = bokehStrength * paramBokehQuantity;
-            
-            float blurdist = blurdist_px * ammountBlur;
-
-            vec2 p0 = uv;
-            vec2 p1 = uv + blurdist * blurvec;
-            vec2 stepvec = (p1-p0) / float(NUM_SAMPLES);
-            vec2 p = p0;
-            #if defined(USE_RANDOM)
-            p += (hash12n(uv+fract(iTime)+0.3)) * stepvec;
-            #endif
-
-            vec3 sumcol = vec3(0.0);
-
-            float firstSampleWeight = 1.0 / (float(NUM_SAMPLES)*0.4);
-            float restOfSampleWeights = firstSampleWeight;
-
-            float acum = 0.0;
-            MedianStruct arraySamples[NUM_SAMPLES];
-
-            for (int i =0; i<NUM_SAMPLES;++i)
-            {
-                float weightSmpl = sampleGaussian(i);
-                vec3 smpl = texture2D(iChannel0, p).rgb;
-                sumcol += weightSmpl * texture2D(iChannel0, p).rgb;
-                acum += weightSmpl;
-
-                arraySamples[i].greyval = (smpl.x + smpl.y + smpl.z)/3.0;
-                arraySamples[i].color_rgb = vec3(smpl.x, smpl.y, smpl.z);
-
-                p += stepvec;
-            }
-            sumcol = medianFilter(arraySamples);
-            //sumcol /= float(NUM_SAMPLES);
-            //sumcol /= acum;
-
-            gl_FragColor = vec4(sumcol, 1.0);
-
-        }
-
-    </script>
-
-    <script id="shader-fs-bokeh-BufferD" type="x-shader/x-fragment">
-        precision mediump float;
-
-        uniform sampler2D iChannel0;
-        uniform sampler2D uSamplerFocalDepth;
-
-        uniform float bokehStrength;
-
-        uniform int uEnableDepthBokeh;
-
-        varying vec2 vTextureCoord;
-
-        #define M_PI 3.1415926535897932384626433832795
-        #define USE_RANDOM
-
-        const vec2 blurdir = vec2(1.0, -0.577350269189626 );
-        // ====
-
-        const float blurdist_px = 64.0;
-        const int NUM_SAMPLES = 16;
-
-        uniform vec3 iResolution;
-        uniform float iTime;
-
-        struct MedianStruct 
-        {
-            float greyval;
-            vec3 color_rgb;
-        };
-
-        //#define GAMMA_SRGB
-        #if defined (GAMMA_SRGB)
-        vec3 srgb2lin( vec3 cs )
-        {
-            vec3 c_lo = cs / 12.92;
-            vec3 c_hi = pow( (cs + 0.055) / 1.055, vec3(2.4));
-            vec3 s = step(vec3(0.04045), cs);
-            return mix( c_lo, c_hi, s);
-        }
-        vec3 lin2srgb( vec3 cl )
-        {
-            //cl = clamp( cl, 0.0, 1.0);
-            vec3 c_lo = 12.92 * cl;
-            vec3 c_hi = 1.055 * pow(cl, vec3(0.41666)) - 0.055;
-            vec3 s = step( vec3(0.0031308), cl);
-            return mix( c_lo, c_hi, s);
-        }
-        #else 
-        vec3 srgb2lin(vec3 c) { return c*c; }
-        vec3 lin2srgb(vec3 c) { return sqrt(c); }
-        #endif //GAMMA_RGB
-
-        //note:uniform pdf rand [0:1[
-        float hash12n(vec2 p)
-        {
-            p = fract(p * vec2(5.3987, 5.4421));
-            p += dot(p.yx, p.xy + vec2(21.5351, 14.3137));
-            return fract(p.x * p.y * 95.4307);
-        }
-
-        float sampleGaussian(int samplepoint) {
-            int smplGaussian = samplepoint / (NUM_SAMPLES);
-            float weight = (1.0 / sqrt(2.0*M_PI)) * exp(-1.0*pow(float(smplGaussian), 2.0) / 2.0);
-            return weight;
-        }
-
-        void interchangesort(inout MedianStruct arraySamples[NUM_SAMPLES]) {
-            const int lengthOfArray = NUM_SAMPLES;
-            // we use an anidated loop
-            for (int i = 0; i < lengthOfArray; i++) {
-                for (int j = 0; j < lengthOfArray; j++) {
-                    if (arraySamples[i].greyval > arraySamples[j].greyval) {
-                        // Interchange of values
-                        MedianStruct auxvar = arraySamples[i];
-                        arraySamples[i] = arraySamples[j];
-                        arraySamples[j] = auxvar;
-                    }
-                }
-            }
-        }
-
-        vec3 medianFilter(MedianStruct arraySamples[NUM_SAMPLES]) {
-             interchangesort(arraySamples);
-             const int i = 15;
-             const int medianPositionFilter = int(NUM_SAMPLES / 2);
-             return (arraySamples[medianPositionFilter].color_rgb);
-        }
-
-        void main()
-        {
-
-            vec2 blurvec = normalize(blurdir) / iResolution.xy;
-            vec2 uv = gl_FragCoord.xy / iResolution.xy;
-            
-            float paramBokehQuantity = 0.0;
-            if (uEnableDepthBokeh == 0)
-            {
-                //paramBokehQuantity = ( 0.55 + 0.45 * sin( 5.0 * uv.x + iTime ) );
-                paramBokehQuantity = 1.0;
-            } else {
-                paramBokehQuantity = texture2D(uSamplerFocalDepth, vTextureCoord).x;
-            }
-
-            float ammountBlur = bokehStrength * paramBokehQuantity;
-
-            float blurdist = blurdist_px * ammountBlur;
-
-            vec2 p0 = uv;
-            vec2 p1 = uv + blurdist * blurvec;
-            vec2 stepvec = (p1-p0) / float(NUM_SAMPLES);
-            vec2 p = p0;
-            #if defined (USE_RANDOM)
-            p += (hash12n(uv+fract(iTime)+0.4)) * stepvec;
-            #endif
-
-            vec3 sumcol = vec3(0.0);
-            float firstSampleWeight = 1.0 / (float(NUM_SAMPLES)*0.4);
-            float restOfSampleWeights = firstSampleWeight;
-
-            float acum = 0.0;
-            MedianStruct arraySamples[NUM_SAMPLES];
-
-            for (int i=0; i<NUM_SAMPLES;++i)
-            {
-                float weightSmpl = sampleGaussian(i);
-                sumcol += weightSmpl * texture2D(iChannel0, p).rgb;
-                vec3 smpl = texture2D(iChannel0, p).rgb;
-                acum += weightSmpl;
-
-                arraySamples[i].greyval = (smpl.x + smpl.y + smpl.z)/3.0;
-                arraySamples[i].color_rgb = vec3(smpl.x, smpl.y, smpl.z);
-
-                p += stepvec;
-            }
-            sumcol = medianFilter(arraySamples);
-            //sumcol /= float(NUM_SAMPLES);
-            //sumcol /= acum;
-
-            gl_FragColor = vec4( sumcol, 1.0);
-        }
-    </script>
-
-
-	<script id="shader-fs-bokeh-Image" type="x-shader/x-fragment">
-        precision mediump float;
-
-        //screen filling texture
-        uniform sampler2D iChannel0;
-        uniform sampler2D iChannel1;
-        uniform sampler2D iChannel2;
-        uniform sampler2D iChannel3;
-
-        uniform sampler2D uSamplerFocalDepth;
-
-        uniform float bokehStrength;
-
-        uniform int uEnableDepthBokeh;
-
-        varying vec2 vTextureCoord;
-
-        uniform vec3 iResolution; // The viewport resolution (z is pixel aspect ratio, usually 1.0)
-        uniform float iTime; // Current time in seconds
-
-        #define M_PI 3.1415926535897932384626433832795
-        #define USE_RANDOM
-
-        struct MedianStruct 
-        {
-            float greyval;
-            vec3 color_rgb;
-        };
-
-        const vec2 blurdir = vec2( -1.0, -0.577350269189626);
-        // ===
-        const float blurdist_px = 64.0;
-        const int NUM_SAMPLES = 16;
-
-        //#define GAMMA_SRGB
-        #if defined (GAMMA_SRGB )
-
-        vec3 srgb2lin( vec cs )
-        {
-            vec3 c_lo = cs  12.92;
-            vec3 c_hi = pow( (cs + 0.055) / 1.055, vec3(2.4) );
-            vec3 s = step(vec3(0.04045), cs);
-            return mix( c_lo, c_hi, s );
-        }
-
-        vec3 lin2srgb( vec3 cl )
-        {
-            // cl = clamp(cl, 0.0, 1.0);
-            vec3 c_lo = 12.92 * cl;
-            vec3 c_hi = 1.055 * pow(cl, vec3(0.4166)) - 0.055;
-            vec3 s = step( vec3(0.0031308), cl);
-            return mix( c_lo, c_hi, s );
-        }
-        #else
-        vec3 srgb2lin(vec3 c) { return c*c; }
-        vec3 lin2srgb(vec3 c) { return sqrt(c); }
-        #endif //GAMMA_SRGB
-
-        //note:: uniform pdf rand [0:1[
-        float hash12n(vec2 p)
-        {
-            p = fract(p * vec2(5.3987, 5.4421));
-            p += dot(p.yx, p.xy + vec2(21.5351, 14.3137));
-            return fract(p.x * p.y * 95.4307);
-        }
-
-        float sampleGaussian(int samplepoint) {
-            int smplGaussian = samplepoint / (NUM_SAMPLES);
-            float weight = (1.0 / sqrt(2.0*M_PI)) * exp(-1.0*pow(float(smplGaussian), 2.0) / 2.0);
-            return weight;
-        }
-
-        void interchangesort(inout MedianStruct arraySamples[NUM_SAMPLES]) {
-            const int lengthOfArray = NUM_SAMPLES;
-            // we use an anidated loop
-            for (int i = 0; i < lengthOfArray; i++) {
-                for (int j = 0; j < lengthOfArray; j++) {
-                    if (arraySamples[i].greyval > arraySamples[j].greyval) {
-                        // Interchange of values
-                        MedianStruct auxvar = arraySamples[i];
-                        arraySamples[i] = arraySamples[j];
-                        arraySamples[j] = auxvar;
-                    }
-                }
-            }
-        }
-
-        vec3 medianFilter(MedianStruct arraySamples[NUM_SAMPLES]) {
-             interchangesort(arraySamples);
-             const int i = 15;
-             const int medianPositionFilter = int(NUM_SAMPLES / 2);
-             return (arraySamples[medianPositionFilter].color_rgb);
-             //return(vec3(1.0, 0.0, 0.0));
-        }
-
-        void main(void) {
-            vec2 blurvec = normalize(blurdir) / iResolution.xy;
-
-            vec2 uv = gl_FragCoord.xy / iResolution.xy;
-            
-            float paramBokehQuantity = 0.0;
-            if (uEnableDepthBokeh == 0) 
-            {
-                //paramBokehQuantity = ( 0.55 + 0.45 * sin( 5.0 * uv.x + iTime ) );
-                paramBokehQuantity = 1.0;
-            } else {
-                paramBokehQuantity = texture2D(uSamplerFocalDepth, vTextureCoord).x;
-            }
-            float ammountBlur = bokehStrength * paramBokehQuantity;
-
-            float blurdist = blurdist_px * ammountBlur;
-
-            vec2 p0 = uv;
-            vec2 p1 = uv + blurdist * blurvec;
-            vec2 stepvec = (p1 - p0) / float(NUM_SAMPLES);
-            vec2 p = p0;
-            #if defined(USE_RANDOM)
-            p += (hash12n(uv+fract(iTime)+0.5)) * stepvec;
-            #endif
-
-            vec3 sumcol = vec3(0.0);
-
-            float firstSampleWeight = 1.0 / (float(NUM_SAMPLES)*0.4);
-            float restOfSampleWeights = firstSampleWeight;
-
-            float acum = 0.0;
-            MedianStruct arraySamples[NUM_SAMPLES];
-
-            for (int i=0; i<NUM_SAMPLES;++i)
-            {
-                float weightSmpl = sampleGaussian(i);
-                sumcol += weightSmpl * texture2D( iChannel1, p).rgb;
-                vec3 smpl = texture2D(iChannel1, p).rgb;
-                acum += weightSmpl;
-
-                arraySamples[i].greyval = (smpl.x + smpl.y + smpl.z)/3.0;
-                arraySamples[i].color_rgb = vec3(smpl.x, smpl.y, smpl.z);
-
-
-                p += stepvec;
-            }
-            sumcol = medianFilter(arraySamples);
-            //sumcol /= float(NUM_SAMPLES);
-            //sumcol /= acum;
-
-            vec3 s2 = texture2D(iChannel2, uv).rgb;
-            vec3 s3 = texture2D( iChannel3, uv).rgb;
-
-            // DEBUG
-            //gl_FragColor = texture2D( iChannel0, uv); return; // DBG BufferA
-            //gl_FragColor = texture2D( iChannel1, uv); return; // DBG BufferB
-            //gl_FragColor = texture2D( iChannel2, uv); return; // DBG BufferC
-            //gl_FragColor = texture2D( iChannel3, uv); return; // DBG BufferD
-
-
-            //gl_FragColor = texture2D( iChannel1, uv); return; // DBG
-            //gl_FragColor = texture2D( iChannel2, uv); return; // DBG
-            //gl_FragColor = texture2D( iChannel3, uv); return; // DBG
-
-            //gl_FragColor = vec4(sumcol,1.0); return; //DBG
-            //gl_FragColor = texture2D( iChannel2, uv); return; // DBG
-            //gl_FragColor = vec4(lin2srgb(s2), 1.0); return; //DBG
-            //gl_FragColor = vec4(lin2srgb(s3), 1.0); return; //DBG
-
-            vec3 outcol = sumcol + s2 + s3;
-            gl_FragColor = vec4(outcol*0.3333, 1.0);
-
-            //gl_FragColor = vec4(0.0, 1.0, 1.0, 1.0);
-        }
-	</script>
 
 	<script id="shader-vs-postprocess" type="x-shader/x-vertex">
 		attribute vec3 aVertexPosition;
@@ -1406,6 +560,10 @@
         var lightPos = vec3.fromValues(10.0, 0.0, 0.0);
 
         var lightPointPos = vec3.fromValues(10.0, 10.0, 15.0);
+
+        var apertureCoefficient = 1.0;
+        var screenPos = 1.0;
+        var focalLength = 1.0;
 
 		function initGL(canvas) {
 			try {
@@ -1762,6 +920,30 @@
             if (!gl.getProgramParameter(shaderProgramBufferRendToText, gl.LINK_STATUS)) {
                 alert("Could not initialise shaders");
             }
+        }
+
+        var shaderProgramDoFPass;
+        function initShadersDoFPass()
+        {
+            var fragmentShader = getShader(gl, "opticaldof-fs");
+            var vertexShader = getShader(gl, "opticaldof-vs");
+
+            shaderProgramDoFPass = gl.createProgram();
+            gl.attachShader(shaderProgramDoFPass, vertexShader);
+            gl.attachShader(shaderProgramDoFPass, fragmentShader);
+            gl.linkProgram(shaderProgramDoFPass);
+
+            if (!gl.getProgramParameter(shaderProgramDoFPass, gl.LINK_STATUS)) {
+                var info = gl.getProgramInfoLog(shaderProgramDoFPass);
+                alert("Could not compile WebGL program. \n\n"+info);
+            }
+
+            shaderProgramDoFPass.vertexPositionAttribute = gl.getAttribLocation(
+                shaderProgramDoFPass, "aVertexPosition");
+            gl.enableVertexAttribArray(shaderProgramDoFPass.vertexPositionAttribute);
+
+            shaderProgramDoFPass.textureCoordAttribute = gl.getAttribLocation(shaderProgramDoFPass, "aTextureCoord");
+            gl.enableVertexAttribArray(shaderProgramDoFPass.textureCoordAttribute);
         }
 
 
@@ -2490,7 +1672,25 @@
                 gl.uniform1f(programShading.nearUniform, myCamera.GetNearValue());
                 gl.uniform1f(programShading.farUniform, myCamera.GetFarValue());
             }
-			
+            if (programShading == shaderProgramDoFPass) {
+                gl.disableVertexAttribArray(shaderProgram.vertexNormalAttribute);
+                gl.disableVertexAttribArray(shaderProgram.textureCoordAttribute);
+                
+                gl.enableVertexAttribArray(programShading.vertexPositionAttribute);
+                gl.enableVertexAttribArray(programShading.textureCoordAttribute);
+
+                gl.activeTexture(gl.TEXTURE0);
+                gl.bindTexture(gl.TEXTURE_2D, textureFramebufferSetupScene);
+                gl.uniform1i(gl.getUniformLocation(programShading, "colorChannel"), 0);
+
+                gl.activeTexture(gl.TEXTURE1);
+                gl.bindTexture(gl.TEXTURE_2D, textureAuxFramebuffer);
+                gl.uniform1i(gl.getUniformLocation(programShading, "dpethChannel"), 1);
+
+                gl.uniform1f(gl.getUniformLocation(programShading, "uApertureCoefficient"), 1.0);
+                gl.uniform1f(gl.getUniformLocation(programShading, "uScreenPos"), 1.0);
+                gl.uniform1f(gl.getUniformLocation(programShading, "uFocalLength"), 1.0);
+            }
 
 			mat4.identity(mMatrix);
 			mat4.identity(vMatrix);
@@ -2641,6 +1841,25 @@
                 gl.disableVertexAttribArray(shaderProgram.textureCoordAttribute);
                 gl.uniform1f(programShading.nearUniform, myCamera.GetNearValue());
                 gl.uniform1f(programShading.farUniform, myCamera.GetFarValue());
+            }
+            if (programShading == shaderProgramDoFPass) {
+                gl.disableVertexAttribArray(shaderProgram.vertexNormalAttribute);
+                gl.disableVertexAttribArray(shaderProgram.textureCoordAttribute);
+                
+                gl.enableVertexAttribArray(programShading.vertexPositionAttribute);
+                gl.enableVertexAttribArray(programShading.textureCoordAttribute);
+
+                gl.activeTexture(gl.TEXTURE0);
+                gl.bindTexture(gl.TEXTURE_2D, textureFramebufferSetupScene);
+                gl.uniform1i(gl.getUniformLocation(programShading, "colorChannel"), 0);
+
+                gl.activeTexture(gl.TEXTURE1);
+                gl.bindTexture(gl.TEXTURE_2D, textureAuxFramebuffer);
+                gl.uniform1i(gl.getUniformLocation(programShading, "depthChannel"), 1);
+
+                gl.uniform1f(gl.getUniformLocation(programShading, "uApertureCoefficient"), 1.0);
+                gl.uniform1f(gl.getUniformLocation(programShading, "uScreenPos"), 1.0);
+                gl.uniform1f(gl.getUniformLocation(programShading, "uFocalLength"), 1.0);
             }
 
 			mat4.identity(mMatrix);
@@ -2808,6 +2027,25 @@
                 gl.disableVertexAttribArray(shaderProgram.textureCoordAttribute);
                 gl.uniform1f(programShading.nearUniform, myCamera.GetNearValue());
                 gl.uniform1f(programShading.farUniform, myCamera.GetFarValue());
+            }
+            if (programShading == shaderProgramDoFPass) {
+                gl.disableVertexAttribArray(shaderProgram.vertexNormalAttribute);
+                gl.disableVertexAttribArray(shaderProgram.textureCoordAttribute);
+                
+                gl.enableVertexAttribArray(programShading.vertexPositionAttribute);
+                gl.enableVertexAttribArray(programShading.textureCoordAttribute);
+
+                gl.activeTexture(gl.TEXTURE0);
+                gl.bindTexture(gl.TEXTURE_2D, textureFramebufferSetupScene);
+                gl.uniform1i(gl.getUniformLocation(programShading, "colorChannel"), 0);
+
+                gl.activeTexture(gl.TEXTURE1);
+                gl.bindTexture(gl.TEXTURE_2D, textureAuxFramebuffer);
+                gl.uniform1i(gl.getUniformLocation(programShading, "dpethChannel"), 1);
+
+                gl.uniform1f(gl.getUniformLocation(programShading, "uApertureCoefficient"), 1.0);
+                gl.uniform1f(gl.getUniformLocation(programShading, "uScreenPos"), 1.0);
+                gl.uniform1f(gl.getUniformLocation(programShading, "uFocalLength"), 1.0);
             }
 
             mat4.identity(mMatrix);
@@ -2985,6 +2223,47 @@
             gl.enable(gl.DEPTH_TEST);
         }
 
+        function drawDoFPass() {
+            gl.useProgram(shaderProgramDoFPass);
+
+            shaderProgramDoFPass.vertexPositionAttribute = gl.getAttribLocation(shaderProgramBufferRendToText, "aVertexPosition");
+            gl.enableVertexAttribArray(shaderProgramBufferRendToText.vertexPositionAttribute);
+
+            shaderProgramDoFPass.textureCoordAttribute = gl.getAttribLocation(shaderProgramBufferRendToText, "aTextureCoord");
+            gl.enableVertexAttribArray(shaderProgramBufferRendToText.textureCoordAttribute);
+
+            shaderProgramDoFPass.coloChannelSampler = gl.getUniformLocation(shaderProgramDoFPass, "colorChannel");
+
+            shaderProgramDoFPass.depthChannelSampler = gl.getUniformLocation(shaderProgramDoFPass, "depthChannel");
+
+            //gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT );
+            gl.disable(gl.DEPTH_TEST);
+
+            gl.bindBuffer(gl.ARRAY_BUFFER, screenFillingVertexPositionBuffer);
+            gl.vertexAttribPointer(shaderProgramDoFPass.vertexPositionAttribute, screenFillingVertexPositionBuffer.itemSize, gl.FLOAT, false, 0, 0);
+
+            gl.bindBuffer(gl.ARRAY_BUFFER, screenFillingTextureCoordBuffer);
+            gl.vertexAttribPointer(shaderProgramDoFPass.textureCoordAttribute, screenFillingTextureCoordBuffer.itemSize, gl.FLOAT, false, 0, 0);
+
+            gl.activeTexture(gl.TEXTURE0);
+            gl.bindTexture(gl.TEXTURE_2D, textureFramebufferSetupScene);
+            gl.uniform1i(shaderProgramDoFPass.colorChannelSampler, 0);
+
+            gl.activeTexture(gl.TEXTURE1);
+            gl.bindTexture(gl.TEXTURE_2D, textureAuxFramebuffer);
+            gl.uniform1i(shaderProgramDoFPass.depthChannelSampler, 1);
+
+
+            gl.uniform1f(gl.getUniformLocation(shaderProgramDoFPass, "uApertureCoefficient"), apertureCoefficient);
+            gl.uniform1f(gl.getUniformLocation(shaderProgramDoFPass, "uScreenPos"), screenPos);
+            gl.uniform1f(gl.getUniformLocation(shaderProgramDoFPass, "uFocalLength"), focalLength);
+
+
+            gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, screenFillingIndexBuffer);
+            gl.drawElements(gl.TRIANGLES, screenFillingIndexBuffer.numItems, gl.UNSIGNED_SHORT, 0);
+            
+            gl.enable(gl.DEPTH_TEST);
+        }
 
 		var lastTime = 0;
 
@@ -3177,7 +2456,7 @@
 
 			animate();
 			calculateDeltaTime();
-            debugGaussian();
+            //debugGaussian();
 			clock();
 
 			//console.log(positionFocalPlane);
@@ -3389,6 +2668,13 @@
 
             drawScene(shaderProgramDepthObjectSpace);
 
+
+            gl.bindFramebuffer(gl.FRAMEBUFFER, framebufferBufferABokeh);
+            gl.viewport(0, 0, gl.viewportWidth, gl.viewportHeight);
+
+            //drawScene(shaderProgramDoFPass);
+            drawDoFPass();
+
             gl.bindFramebuffer(gl.FRAMEBUFFER, null);
 
             gl.viewport(0, 0, gl.viewportWidth, gl.viewportHeight);
@@ -3399,6 +2685,10 @@
 
             gl.viewport(3 * (gl.viewportWidth/4), 2*(gl.viewportHeight/4.0), gl.viewportWidth/4.0, gl.viewportHeight/4.0);
             drawScreenTexture(textureAuxFramebuffer, 1);
+
+            gl.viewport(3 * (gl.viewportWidth/4), 1*(gl.viewportHeight/4.0), gl.viewportWidth/4.0, gl.viewportHeight/4.0);
+            drawScreenTexture(textureFramebufferBufferABokeh, 1);
+
 
 
 
@@ -3449,7 +2739,7 @@
 		var currentlyPressedKeys = {};
 
 		function handleKeyDown(event) {
-			//console.log(event.keyCode);
+			console.log(event.keyCode);
 			currentlyPressedKeys[event.keyCode] = true;
 		}
 
@@ -3505,7 +2795,28 @@
                     bokehStrength = 0.0;
                 }
             }
-            console.log("BOKEH STRENGTH: " + bokehStrength);
+
+            if (currentlyPressedKeys[85]) {
+                apertureCoefficient += 0.01;
+            }
+            if (currentlyPressedKeys[74]) {
+                apertureCoefficient -= 0.01;
+            }
+
+            if (currentlyPressedKeys[73]) {
+                screenPos += 0.01;
+            }
+            if (currentlyPressedKeys[75]) {
+                screenPos -= 0.01;
+            }
+
+            if (currentlyPressedKeys[79]) {
+                focalLength += 0.01;
+            }
+            if (currentlyPressedKeys[76]) {
+                focalLength -= 0.01;
+            }
+            //console.log("BOKEH STRENGTH: " + bokehStrength);
 		}
 
 		function handleMouseMove(event) {
@@ -3666,13 +2977,15 @@
 
             initShadersDepthObjectSpace();
 
-			initShaderBufferA();
-			initshaderBufferB();
-			initshaderBufferC();
-			initshaderBufferD();
+			//initShaderBufferA();
+			//initshaderBufferB();
+			//initshaderBufferC();
+			//initshaderBufferD();
 
-			initShaderBufferImage();
+			//initShaderBufferImage();
 			initScreenFillingBuffers();
+
+            initShadersDoFPass();
 
 			createFramebuffers();
 
