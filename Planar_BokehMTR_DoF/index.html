@@ -399,17 +399,17 @@
         float OneOverScreenWidth;
         float OneOverScreenHeight;
 
-        float GatherAndApply(vec2 uv, float baseCoC, vec4 currCol, float stepDistance, inout vec4 outColor);
+        float GatherAndApply(vec2 uv, float stepDistance, inout vec4 outputColor);
         float hash12n(vec2 p);
 
         void main() {
+            vec4 outputColor = vec4(0.0, 0.0, 0.0, 1.0);
+            vec4 outputColor2 = vec4(0.0, 0.0, 0.0, 1.0);
+
             OneOverScreenWidth = 1.0/uResolution.x;
             OneOverScreenHeight = 1.0/uResolution.y;
 
             vec4 baseColour = texture2D(uSampler, vTextureCoord);
-
-            vec4 outputColor = vec4(0.0, 0.0, 0.0, baseColour.w);
-            vec4 outputColor2 = vec4(0.0, 0.0, 0.0, baseColour.w);
 
             float sampleCount0 = 0.0;
             float sampleCount1 = 0.0;
@@ -419,7 +419,8 @@
 
             for (int i = 0; i < NUM_SAMPLES; i++)
             {
-                float stepDistance = (float(i) + 0.5) * OneOverScreenHeight;
+                float ammountBlur = bokehStrength;
+                float stepDistance = (float(i) + 0.5) * OneOverScreenHeight * ammountBlur;
 
                 // Vertical blur.
                 vec2 step0 = vec2(0.0, -1.0) * stepDistance;
@@ -427,11 +428,11 @@
                     //step0 += (hash12n(step0 + fract(uTime)/1000.0+0.001)) * 1.0;
                     step0 += (hash12n(step0/100000000.0)) * 1.0;
                 #endif
-                sampleCount0 += GatherAndApply(vTextureCoord + step0, baseColour.w, outputColor, stepDistance, outputColor);
+                sampleCount0 += GatherAndApply(vTextureCoord + step0, stepDistance, outputColor);
 
                 // Diagonal blur
                 vec2 step1 = vec2(xStep, 0.5) * stepDistance;
-                sampleCount1 += GatherAndApply(vTextureCoord + step1, baseColour.w, outputColor2, stepDistance, outputColor2);
+                sampleCount1 += GatherAndApply(vTextureCoord + step1, stepDistance, outputColor2);
             }
 
             //Normalize if any color was added. 
@@ -445,60 +446,23 @@
             //gl_FragData[0] = vec4(0.90, 0.73, 0.039, 1.0);
             //gl_FragData[1] = vec4(0.92, 0.47, 0.92, 1.0);
 
-            // For the combined term, set the CoC to the blurriest of the two inputs
-            if (abs(outputColor.w) > abs(outputColor2.w))
-            {
-                outputColor2.w = outputColor.w;
-            }
-
             gl_FragData[0] = outputColor;
             gl_FragData[1] = outputColor2;
         }
 
-        float GatherAndApply(vec2 uv, float baseCoC, vec4 currCol, float stepDistance, inout vec4 outColor) {
-            outColor = currCol;
+        float GatherAndApply(vec2 uv, float stepDistance, inout vec4 outColor) {
+            
+
             vec4 col = texture2D(uSampler, uv);
+            
+            float absCoC = abs(bokehStrength);
 
-            // CoC < 0 means the pixel is in front of the focal plane.
-            bool blurNear = col.w < 0.0;
-            float absCoC = abs(col.w);
+            // Accumulate the colour. Allow partial sampling at the pixel bounday for smoothness.
+            float sampleFraction = clamp((absCoC - stepDistance) / OneOverScreenHeight, 0.0, 1.0);
 
-            // Check if the CoC of the sampled pixel is big enough to scatter here, and 
-            // the sampled pixel is in front of the focal plane or
-            // this pixel is behind the focal plane and the sampled pixel isn't too far behind it.
-            if ((absCoC > stepDistance) && (blurNear || (baseCoC > 0.0 && absCoC < baseCoC * 2.0)))
-            {
-                // Sort out the CoC of the blurred image, by taking the biggest CoC to maintain the 
-                // hexagon shape in the second pass.
-                // Near-blurred pixels should continue to blur over far pixels. Far pixels don't blur
-                // over near pixels so that case can be ignored.
-                if (blurNear) {
-                    if (outColor.w < 0.0)
-                    {
-                        // This pixel is already near-blurred, so see if the sampled CoC is any bigger.
-                        outColor.w = min(outColor.w, col.w);
-                    } 
-                    else 
-                    {
-                        // This pixel is behind the focal plane, so only continue with the near-blur if 
-                        // that is stronger. Going to get artifacts either way on depth edges with different
-                        // coloured pixels.
-                        if (-col.w > outColor.w)
-                        {
-                            outColor.w = col.w;
-                        }
-                    }
-                }
-
-                // Now accumulate the colour. Allow partial sampling at the pixel boundary for smootheness. 
-                float sampleFraction = clamp((absCoC - stepDistance) / OneOverScreenHeight, 0.0, 1.0);
-                outColor.xyz += sampleFraction * col.xyz;
-
-                return sampleFraction;
-            }
-
-            // No colour added.
-            return 0.0;
+            outColor.xyz += sampleFraction * col.xyz;
+        
+            return sampleFraction;
         }
 
         // note: uniform pdf ranf [0;1[
@@ -530,19 +494,17 @@
         float OneOverScreenWidth;
         float OneOverScreenHeight;
 
+        vec4 finalCol;
 
-        float GatherAndApply(sampler2D texture, vec2 uv, float baseCoC, vec4 currCol, float stepDistance, inout vec4 outColor);
+        float GatherAndApply(sampler2D texture, vec2 uv, float stepDistance, inout vec4 outColor);
         float hash12n(vec2 p);
 
         void main(void) {
-            vec4 finalCol;
-
             vec4 baseColour = texture2D(BlurPass1_1, vTextureCoord);
-            gl_FragColor = baseColour; return;
 
             // Two sets of colour to accumulate this time.
-            vec4 outputColor0 = vec4(0.0, 0.0, 0.0, baseColour.w);
-            vec4 outputColor1 = vec4(0.0, 0.0, 0.0, baseColour.w);
+            vec4 outputColor0 = vec4(0.0, 0.0, 0.0, 1.0);
+            vec4 outputColor1 = vec4(0.0, 0.0, 0.0, 1.0);
 
             OneOverScreenWidth = 1.0/uResolution.x;
             OneOverScreenHeight = 1.0/uResolution.y;
@@ -557,10 +519,11 @@
 
             for (int i = 0; i < NUM_SAMPLES; i++)
             {
-                float stepDistance = (float(i) + 0.5) * OneOverScreenHeight;
+                float ammountBlur = bokehStrength;
+                float stepDistance = (float(i) + 0.5) * OneOverScreenHeight * bokehStrength;
 
-                sampleCount0 += GatherAndApply(BlurPass1_0, vTextureCoord + step0 * stepDistance, baseColour.w, outputColor0, stepDistance, outputColor0);
-                sampleCount1 += GatherAndApply(BlurPass1_1, vTextureCoord + step1 * stepDistance, baseColour.w, outputColor1, stepDistance, outputColor1);
+                sampleCount0 += GatherAndApply(BlurPass1_0, vTextureCoord + step0 * stepDistance, stepDistance, outputColor0);
+                sampleCount1 += GatherAndApply(BlurPass1_1, vTextureCoord + step1 * stepDistance, stepDistance, outputColor1);
             }
 
             // Normalize if any color was added. col0 is from sampling the single texture,
@@ -571,60 +534,36 @@
 
             // Combine and divide by three (col1 is double brightness)
             finalCol.xyz = (outputColor0.xyz + outputColor1.xyz) / 3.0;
-            
-            // Use a max for the blurriness, no accumulation done here.
-            finalCol.w = max(abs(outputColor0.w), abs(outputColor1.w));
+            finalCol.w = 1.0;
 
             gl_FragColor = finalCol;
         }
 
-        float GatherAndApply(sampler2D texture, vec2 uv, float baseCoC, vec4 currCol, float stepDistance, inout vec4 outColor) {
+        float GatherAndApply(sampler2D texture, vec2 uv, float stepDistance, inout vec4 outColor) {
             #if defined(USE_RANDOM) 
                 uv += (hash12n(uv + fract(uTime)+0.1)) * stepDistance;
             #endif
-
-            outColor = currCol;
+            //outColor = vec4(1.0, 0.0, 0.0, 1.0);
+            // outCol = baseColour; outColor = currCol;
             vec4 col = texture2D(texture, uv);
-            // CoC < 0 means the pixel is in front of the focal plane.
-            bool blurNear = col.w < 0.0;
-            float absCoC = abs(col.w);
+            //float absCoC = abs(10000.0*bokehStrength/1.0);
+            float absCoC = abs(bokehStrength);
 
+            // Accumulate the colour. Allow partial sampling at the pixel bounday for smoothness.
+            float sampleFraction = clamp((absCoC - stepDistance) / OneOverScreenHeight, 0.0, 1.0);
+            //sampleFraction = 1.0;
 
-            // Check if the CoC of the sampled pixel is big enough to scatter here, and 
-            // the sampled pixel is in front of the focal plane or
-            // this pixel is behind the focal plane and the sampled pixel isn't too far behind it.
-            if ((absCoC > stepDistance) && (blurNear || (baseCoC > 0.0 && absCoC < baseCoC * 2.0)))
-            {
-                // Sort out the CoC of the blurred image, by taking the biggest CoC to maintain the 
-                // hexagon shape in the second pass.
-                // Near-blurred pixels should continue to blur over far pixels. Far pixels don't blur
-                // over near pixels so that case can be ignored.
-                if (blurNear) {
-                    if (outColor.w < 0.0)
-                    {
-                        // This pixels is already near-blurred, so see if the sampled CoC is any bigger
-                        outColor.w = min(outColor.w, col.w);
-                    }
-                    else {
-                        // This pixel is behind the focal plane, so only continue with the near-blur if 
-                        // that is stronger. Going to get artifacts either way on depth edges with different
-                        // coloured pixels.
-                        if (-col.w > outColor.w)
-                        {
-                            outColor.w = col.w;
-                        }
-                    }
-                }
+            //if (((col.x + col.y + col.z) / 3.0) > 0.8) {
+            //    col.xyz = vec3(0.0, 0.0, 10) * col.xyz;
+            //}
 
-                // Now accumulate the colour. Allow partial sampling at the pixel boundary for smoothness
-                float sampleFraction = clamp((absCoC - stepDistance) / OneOverScreenHeight, 0.0, 1.0);
-                outColor.xyz += sampleFraction * col.xyz;
+            outColor.xyz += sampleFraction * col.xyz;
+            //outColor.xyz = vec3(1.0, 0.0, 0.0);
+            //outColor.xyz = col.xyz;
+            // CoC , 0 
 
-                return sampleFraction;
-            }
-
-            // No colour added
-            return 0.0;
+            //return 0.0;
+            return sampleFraction;
         }
 
         // note: uniform pdf ranf [0;1[
@@ -634,11 +573,6 @@
             p += dot(p.yx, p.xy + vec2(21.5351, 14.3137));
             return fract(p.x * p.y * 95.4307);
         }
-
-    </script>
-
-    <script id="" type="">
-
 
     </script>
 
@@ -692,8 +626,7 @@
             // cam near/far, as per equations
             outCol.w = (CoCScale * outCol.w) + CoCBias; 
 
-            gl_FragColor = outCol;
-            //gl_FragColor = vec4(outCol.w, 0.0, 0.0, 1.0);
+            gl_FragColor = vec4(outCol.w, 0.0, 0.0, 1.0);
             //gl_FragColor = vec4(aux, 0.0, 0.0, 1.0);
         }
     </script>
@@ -3116,7 +3049,7 @@
             gl.vertexAttribPointer(shaderProgramFirstPassBlur.textureCoordAttribute, screenFillingTextureCoordBuffer.itemSize, gl.FLOAT, false, 0, 0);
 
             gl.activeTexture(gl.TEXTURE0);
-            gl.bindTexture(gl.TEXTURE_2D, textureFramebufferCoCSize);
+            gl.bindTexture(gl.TEXTURE_2D, textureFramebufferSetupScene);
             gl.uniform1i(shaderProgramFirstPassBlur.samplerUniform, 0);
 
             gl.uniform2f(shaderProgramFirstPassBlur.resolutionUniform, gl.viewportWidth, gl.viewportHeight);
@@ -3256,7 +3189,7 @@
             gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
 
             //drawScreenTexture(MRTfbData.t[0], 0);
-            gl.viewport(0, gl.viewportHeight/4.0 , gl.viewportWidth/4.0 * 3.0, gl.viewportHeight/4.0*3.0);
+            gl.viewport(0, 0, gl.viewportWidth, gl.viewportHeight);
             drawSecondPassBokeh();
 
             gl.viewport(3 * (gl.viewportWidth/4), 3*(gl.viewportHeight/4.0), gl.viewportWidth/4.0, gl.viewportHeight/4.0);
@@ -3270,7 +3203,7 @@
 		var currentlyPressedKeys = {};
 
 		function handleKeyDown(event) {
-			console.log(event.keyCode);
+			//console.log(event.keyCode);
 			currentlyPressedKeys[event.keyCode] = true;
 		}
 
@@ -3348,15 +3281,9 @@
                 focalLength -= 0.01;
             }
 
-            if (currentlyPressedKeys[32]) {
-                console.log("CAMERA STATS: ");
-                console.log("Aperture: "+Aperture);
-                console.log("FocalPlane: "+focalPlane);
-                console.log("focalLength: "+focalLength);
-                console.log("-*-=*=-*-=*=-*-=*=-*-=*=-*-=*=-*-=*=-*-=*=");
-            }
+
             //console.log("BOKEH STRENGTH: " + bokehStrength);
-            //console.log(elapsed);
+            console.log(elapsed);
 		}
 
 		function handleMouseMove(event) {
@@ -3651,6 +3578,6 @@
 	</head>
 
 	<body onload="webGLStart();">
-		<canvas id="3D_scene-canvas" style="border: none;" width="1600" height="900"></canvas>
+		<canvas id="3D_scene-canvas" style="border: none;" width="1280" height="720"></canvas>
 	</body>
 </html>
