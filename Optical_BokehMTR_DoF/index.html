@@ -357,7 +357,8 @@
 
         void main(void) {
             if (uDrawBorder == 0) {
-                gl_FragColor = texture2D(uSampler, vTextureCoord);
+                vec3 vSample = texture2D(uSampler, vTextureCoord).rgb;
+                gl_FragColor = vec4(vSample, 1.0);
             } else {
                 gl_FragColor = vec4(0.46, 0.71, 0.0, 1.0);
             }
@@ -419,7 +420,7 @@
 
             for (int i = 0; i < NUM_SAMPLES; i++)
             {
-                float stepDistance = (float(i) + 0.5) * OneOverScreenHeight;
+                float stepDistance = (float(i) + 0.5) * OneOverScreenHeight * bokehStrength;
 
                 // Vertical blur.
                 vec2 step0 = vec2(0.0, -1.0) * stepDistance;
@@ -453,6 +454,9 @@
 
             gl_FragData[0] = outputColor;
             gl_FragData[1] = outputColor2;
+
+            //gl_FragData[0] = vec4(outputColor.xyz, 1.0);
+            //gl_FragData[1] = vec4(outputColor2.xyz, 1.0);
         }
 
         float GatherAndApply(vec2 uv, float baseCoC, vec4 currCol, float stepDistance, inout vec4 outColor) {
@@ -575,7 +579,7 @@
             // Use a max for the blurriness, no accumulation done here.
             finalCol.w = max(abs(outputColor0.w), abs(outputColor1.w));
 
-            gl_FragColor = finalCol;
+            gl_FragColor = vec4(finalCol.xyz, 1.0);
         }
 
         float GatherAndApply(sampler2D texture, vec2 uv, float baseCoC, vec4 currCol, float stepDistance, inout vec4 outColor) {
@@ -637,19 +641,15 @@
 
     </script>
 
-    <script id="" type="">
-
-
-    </script>
-
     <script id="DepthPass-fs" type="x-shader/x-fragment">
         precision mediump float;
 
-        //uniform float uFar;
-        //uniform float uNear;
+        uniform float uFar;
+        uniform float uNear;
 
         void main(void) {
-            float z = gl_FragCoord.z;
+            //float z = gl_FragCoord.z;
+            float z = uNear * uFar / (uFar - gl_FragCoord.z*(uFar - uNear));
             gl_FragColor = vec4(vec3(z), 1.0);
             //gl_FragColor = vec4(1.0, 0.0, 0.0, 1.0);
         }
@@ -680,7 +680,7 @@
         void main(void) {
             //gl_FragColor = vec4(CoCScale, 0.0, 0.0, 1.0); return;
 
-            //gl_FragColor = texture2D(colorChannel, vTextureCoord); return;
+            //gl_FragColor = texture2D(depthChannel, vTextureCoord); return;
             vec4 outCol;
 
             outCol.xyz = texture2D(colorChannel, vTextureCoord).xyz;
@@ -708,6 +708,32 @@
             vTextureCoord = aTextureCoord;
             gl_Position = vec4(aVertexPosition, 1.0);
         }        
+    </script>
+
+    <script id="ApplyDoFPass-fs" type="x-shader/x-fragment">
+        precision mediump float;
+
+        varying vec2 vTextureCoord;
+
+        uniform sampler2D uChannelOriginalScene;
+        uniform sampler2D uChannelBluredScene;
+
+        void main(void) {
+            // Sample the texture
+            vec4 colChannel0 = texture2D(uChannelOriginalScene, vTextureCoord);
+            vec4 colChannel1 = texture2D(uChannelBluredScene, vTextureCoord);
+
+            // Blur texture is lower resolution so only blend it in if the pixel
+            // is out of focus. Use a nice blend to avoid an obvious boundary
+            colChannel1.w = clamp(1000.0 * abs(colChannel1.w) - 0.001, 0.0, 1.0);
+
+            vec4 finalCol = mix(colChannel0, colChannel1, colChannel1.w);
+
+            gl_FragColor = finalCol;
+            //gl_FragColor = texture2D(uChannelOriginalScene, vTextureCoord);
+            //gl_FragColor = texture2D(uChannelBluredScene, vTextureCoord);
+            //gl_FragColor = vec4(1.0, 0.0, 0.0, 1.0);
+        }
     </script>
 
 	<script type="text/javascript">
@@ -754,6 +780,11 @@
         var framebufferCoCSize;
         var textureFramebufferCoCSize;
 
+
+        var framebufferApplyDoFPass;
+        var textureFramebufferApplyDoF;
+
+
 		var screenFillingVertexPositionBuffer;
 		var screenFillingTextureCoordBuffer;
 		var screenFillingIndexBuffer;
@@ -771,9 +802,14 @@
         var ext3;
         var MRTfbData;
 
-        var Aperture = 1.0;
-        var focalLength = 1.0;
-        var focalPlane = 1.0;
+        // var Aperture = 0.1; // 1.0
+        // var focalLength = 0.021;
+        // var focalPlane = 5.0;
+
+        var Aperture = 0.6; // 1.0
+        var focalLength = 2.07;
+        var focalPlane = 5.0;
+
 
 		function initGL(canvas) {
 			try {
@@ -990,7 +1026,7 @@
             gl.attachShader(shaderProgramHdrColor, fragmentShader);
             gl.linkProgram(shaderProgramHdrColor);
 
-            if (!gl.getProgramParameter(shaderProgramBufferRendToText, gl.LINK_STATUS)) {
+            if (!gl.getProgramParameter(shaderProgramHdrColor, gl.LINK_STATUS)) {
                 alert("Could not initialise shaders");
             }
 
@@ -1068,6 +1104,21 @@
             gl.linkProgram(shaderProgramCoCSizePass);
 
             if (!gl.getProgramParameter(shaderProgramCoCSizePass, gl.LINK_STATUS)) {
+                alert("Could not initialise shaders");
+            }
+        }
+
+        var shaderProgramApplyDoFPass;
+        function initShadersApplyDoFPass() {
+            var fragmentShader = getShader(gl, "ApplyDoFPass-fs");
+            var vertexShader = getShader(gl, "shader-vs-postprocess");
+
+            shaderProgramApplyDoFPass = gl.createProgram();
+            gl.attachShader(shaderProgramApplyDoFPass, vertexShader);
+            gl.attachShader(shaderProgramApplyDoFPass, fragmentShader);
+            gl.linkProgram(shaderProgramApplyDoFPass);
+
+            if (!gl.getProgramParameter(shaderProgramApplyDoFPass, gl.LINK_STATUS)) {
                 alert("Could not initialise shaders");
             }
         }
@@ -1814,6 +1865,8 @@
             }
             if (programShading == shaderProgramDepthPass) {
                 gl.enableVertexAttribArray(programShading.vertexPositionAttribute);
+                gl.uniform1f(gl.getUniformLocation(programShading, "uFar"), myCamera.GetFarValue());
+                gl.uniform1f(gl.getUniformLocation(programShading, "uNear"), myCamera.GetNearValue());
                 //gl.disableVertexAttribArray(shaderProgram.vertexNormalAttribute);
                 //gl.disableVertexAttribArray(shaderProgram.textureCoordAttribute);
             }
@@ -1970,6 +2023,8 @@
             }
             if (programShading == shaderProgramDepthPass) {
                 gl.enableVertexAttribArray(programShading.vertexPositionAttribute);
+                gl.uniform1f(gl.getUniformLocation(programShading, "uFar"), myCamera.GetFarValue());
+                gl.uniform1f(gl.getUniformLocation(programShading, "uNear"), myCamera.GetNearValue());
                 //gl.disableVertexAttribArray(shaderProgram.vertexNormalAttribute);
                 //gl.disableVertexAttribArray(shaderProgram.textureCoordAttribute);
             }
@@ -2140,6 +2195,8 @@
             }
             if (programShading == shaderProgramDepthPass) {
                 gl.enableVertexAttribArray(programShading.vertexPositionAttribute);
+                gl.uniform1f(gl.getUniformLocation(programShading, "uFar"), myCamera.GetFarValue());
+                gl.uniform1f(gl.getUniformLocation(programShading, "uNear"), myCamera.GetNearValue());
                 //gl.disableVertexAttribArray(shaderProgram.vertexNormalAttribute);
                 //gl.disableVertexAttribArray(shaderProgram.textureCoordAttribute);
             }
@@ -3224,6 +3281,42 @@
             gl.drawElements(gl.TRIANGLES, screenFillingIndexBuffer.numItems, gl.UNSIGNED_SHORT, 0);
         }
 
+        function drawApplyDoFPass() {
+            gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+
+            gl.useProgram(shaderProgramApplyDoFPass);
+
+            shaderProgramApplyDoFPass.vertexPositionAttribute = gl.getAttribLocation(shaderProgramApplyDoFPass, "aVertexPosition");
+            gl.enableVertexAttribArray(shaderProgramApplyDoFPass.vertexPositionAttribute);
+
+            shaderProgramApplyDoFPass.textureCoordAttribute = gl.getAttribLocation(shaderProgramApplyDoFPass, "aTextureCoord");
+            gl.enableVertexAttribArray(shaderProgramApplyDoFPass.textureCoordAttribute);
+
+            shaderProgramApplyDoFPass.samplerChannel0Uniform = gl.getUniformLocation(shaderProgramApplyDoFPass, "uChannelOriginalScene");
+            shaderProgramApplyDoFPass.samplerChannel1Uniform = gl.getUniformLocation(shaderProgramApplyDoFPass, "uChannelBluredScene");
+
+
+            gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+
+            gl.bindBuffer(gl.ARRAY_BUFFER, screenFillingVertexPositionBuffer);
+            gl.vertexAttribPointer(shaderProgramApplyDoFPass.vertexPositionAttribute, screenFillingVertexPositionBuffer.itemSize, gl.FLOAT, false, 0, 0);
+
+            gl.bindBuffer(gl.ARRAY_BUFFER, screenFillingTextureCoordBuffer);
+            gl.vertexAttribPointer(shaderProgramApplyDoFPass.textureCoordAttribute, screenFillingTextureCoordBuffer.itemSize, gl.FLOAT, false, 0, 0);
+
+            gl.activeTexture(gl.TEXTURE0);
+            gl.bindTexture(gl.TEXTURE_2D, textureFramebufferSetupScene);
+            gl.uniform1i(shaderProgramApplyDoFPass.samplerChannel0Uniform, 0);
+
+            gl.activeTexture(gl.TEXTURE1);
+            gl.bindTexture(gl.TEXTURE_2D, textureFramebufferApplyDoF);
+            gl.uniform1i(shaderProgramApplyDoFPass.samplerChannel1Uniform, 1);
+
+
+            gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, screenFillingIndexBuffer);
+            gl.drawElements(gl.TRIANGLES, screenFillingIndexBuffer.numItems, gl.UNSIGNED_SHORT, 0);
+        }
+
 
         function drawBokehEffects() {
             gl.bindFramebuffer(gl.FRAMEBUFFER, framebufferSetupSceneRGBA32F);
@@ -3252,12 +3345,18 @@
 
             drawFirstPassBokeh();
 
+            gl.bindFramebuffer(gl.FRAMEBUFFER, framebufferApplyDoFPass);
+            gl.viewport(0, 0, gl.viewportWidth, gl.viewportHeight);
+
+            drawSecondPassBokeh();
+
+
             gl.bindFramebuffer(gl.FRAMEBUFFER, null);
             gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
 
             //drawScreenTexture(MRTfbData.t[0], 0);
             gl.viewport(0, gl.viewportHeight/4.0 , gl.viewportWidth/4.0 * 3.0, gl.viewportHeight/4.0*3.0);
-            drawSecondPassBokeh();
+            drawApplyDoFPass();
 
             gl.viewport(3 * (gl.viewportWidth/4), 3*(gl.viewportHeight/4.0), gl.viewportWidth/4.0, gl.viewportHeight/4.0);
             drawScreenTexture(textureFramebufferDepth, 1);
@@ -3265,6 +3364,15 @@
             gl.viewport(3 * (gl.viewportWidth/4), 2*(gl.viewportHeight/4.0), gl.viewportWidth/4.0, gl.viewportHeight/4.0);
             drawScreenTexture(textureFramebufferCoCSize, 1);
 
+            gl.viewport(3 * (gl.viewportWidth/4), 1*(gl.viewportHeight/4.0), gl.viewportWidth/4.0, gl.viewportHeight/4.0);
+            drawScreenTexture(textureFramebufferApplyDoF);
+
+            gl.viewport(0 * (gl.viewportWidth/4), 0*(gl.viewportHeight/4.0), gl.viewportWidth/4.0, gl.viewportHeight/4.0);
+            drawScreenTexture(MRTfbData.t[0], 1);
+            //MRTfbData.t[0]
+
+            gl.viewport(1 * (gl.viewportWidth/4), 0*(gl.viewportHeight/4.0), gl.viewportWidth/4.0, gl.viewportHeight/4.0);
+            drawScreenTexture(MRTfbData.t[1], 1);
         }
 
 		var currentlyPressedKeys = {};
@@ -3329,23 +3437,29 @@
 
             if (currentlyPressedKeys[85]) {
                 Aperture += 0.01;
+                console.log("Aperture: "+Aperture);
             }
             if (currentlyPressedKeys[74]) {
                 Aperture -= 0.01;
+                console.log("Aperture: "+Aperture);
             }
 
             if (currentlyPressedKeys[73]) {
                 focalPlane += 0.01;
+                console.log("FocalPlane: "+focalPlane);
             }
             if (currentlyPressedKeys[75]) {
                 focalPlane -= 0.01;
+                console.log("FocalPlane: "+focalPlane);
             }
 
             if (currentlyPressedKeys[79]) {
                 focalLength += 0.01;
+                console.log("focalLength: "+focalLength);
             }
             if (currentlyPressedKeys[76]) {
                 focalLength -= 0.01;
+                console.log("focalLength: "+focalLength);
             }
 
             if (currentlyPressedKeys[32]) {
@@ -3384,7 +3498,6 @@
 
 				myCamera.ProcessMouseMovement(xoffset, yoffset, true);
 			}
-			
 		}
 
 		function createFramebuffers() {
@@ -3460,6 +3573,9 @@
             gl.framebufferRenderbuffer(gl.FRAMEBUFFER, gl.DEPTH_ATTACHMENT, gl.RENDERBUFFER, renderbufferDepth);
 
 
+
+
+
             framebufferCoCSize = gl.createFramebuffer();
             gl.bindFramebuffer(gl.FRAMEBUFFER, framebufferCoCSize);
 
@@ -3474,6 +3590,27 @@
 
             gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, textureCoC, 0);
             gl.framebufferRenderbuffer(gl.FRAMEBUFFER, gl.DEPTH_ATTACHMENT, gl.RENDERBUFFER, renderbufferCoC);
+
+
+
+
+            framebufferApplyDoFPass = gl.createFramebuffer();
+            gl.bindFramebuffer(gl.FRAMEBUFFER, framebufferApplyDoFPass);
+
+            var textureApplyDoF = createAndSetupTexture();
+            textureFramebufferApplyDoF = textureApplyDoF;
+
+
+            gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.viewportWidth, gl.viewportHeight, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
+
+            var renderbufferApplyDoF = gl.createRenderbuffer();
+            gl.bindRenderbuffer(gl.RENDERBUFFER, renderbufferApplyDoF);
+            gl.renderbufferStorage(gl.RENDERBUFFER, gl.DEPTH_COMPONENT16, gl.viewportWidth, gl.viewportHeight);
+
+            gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, textureApplyDoF, 0);
+            gl.framebufferRenderbuffer(gl.FRAMEBUFFER, gl.DEPTH_ATTACHMENT, gl.RENDERBUFFER, renderbufferApplyDoF);
+
+
 
 
 			framebufferBufferABokehRGBA32F = gl.createFramebuffer();
@@ -3524,10 +3661,6 @@
 
 
 			gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, texture6, 0);
-
-
-
-
 		}
 
         function setupMRT() {
@@ -3632,6 +3765,8 @@
 
             initShadersDepthPass();
             initShadersCoCSizePass();
+
+            initShadersApplyDoFPass();
 
 			gl.clearColor(0.0, 0.0, 0.0, 1.0);
 			gl.enable(gl.DEPTH_TEST);

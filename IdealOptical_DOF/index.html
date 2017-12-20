@@ -222,10 +222,6 @@
 
     </script>
 
-
-
-
-
 	<script id="per-fragment-lighting-vs" type="x-shader/x-vertex">
 		attribute vec3 aVertexPosition;
 		attribute vec3 aVertexNormal;
@@ -1685,7 +1681,7 @@
 
                 gl.activeTexture(gl.TEXTURE1);
                 gl.bindTexture(gl.TEXTURE_2D, textureAuxFramebuffer);
-                gl.uniform1i(gl.getUniformLocation(programShading, "dpethChannel"), 1);
+                gl.uniform1i(gl.getUniformLocation(programShading, "depthChannel"), 1);
 
                 gl.uniform1f(gl.getUniformLocation(programShading, "uApertureCoefficient"), 1.0);
                 gl.uniform1f(gl.getUniformLocation(programShading, "uScreenPos"), 1.0);
@@ -2041,7 +2037,7 @@
 
                 gl.activeTexture(gl.TEXTURE1);
                 gl.bindTexture(gl.TEXTURE_2D, textureAuxFramebuffer);
-                gl.uniform1i(gl.getUniformLocation(programShading, "dpethChannel"), 1);
+                gl.uniform1i(gl.getUniformLocation(programShading, "depthChannel"), 1);
 
                 gl.uniform1f(gl.getUniformLocation(programShading, "uApertureCoefficient"), 1.0);
                 gl.uniform1f(gl.getUniformLocation(programShading, "uScreenPos"), 1.0);
