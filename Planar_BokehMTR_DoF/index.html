@@ -534,6 +534,7 @@
 
             // Combine and divide by three (col1 is double brightness)
             finalCol.xyz = (outputColor0.xyz + outputColor1.xyz) / 3.0;
+            finalCol.xyz = outputColor1.xyz;
             finalCol.w = 1.0;
 
             gl_FragColor = finalCol;
