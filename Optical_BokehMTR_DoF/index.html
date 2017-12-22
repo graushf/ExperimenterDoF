@@ -430,6 +430,18 @@
                 #endif
                 sampleCount0 += GatherAndApply(vTextureCoord + step0, baseColour.w, outputColor, stepDistance, outputColor);
 
+                vec4 aux = texture2D(uSampler, vTextureCoord);
+                bool blurNear = aux.w < 0.0;
+                if (blurNear) {
+                    gl_FragData[0] = vec4(1.0, 0.0, 0.0, 1.0);
+                } else {
+                    gl_FragData[0] = vec4(0.0, 0.0, 1.0, 1.0)    ;
+                }
+                return;
+                gl_FragData[0] = vec4(aux.w, aux.w, aux.w, 1.0); 
+
+                gl_FragData[1] = outputColor2; return;
+
                 // Diagonal blur
                 vec2 step1 = vec2(xStep, 0.5) * stepDistance;
                 sampleCount1 += GatherAndApply(vTextureCoord + step1, baseColour.w, outputColor2, stepDistance, outputColor2);
@@ -702,7 +714,6 @@
             // Get CoCScale and CoCBias from aperture, focal length, focal plane and 
             // cam near/far, as per equations
             outCol.w = outCol.w * CoCScale  + CoCBias;
-
             gl_FragColor = outCol;
             //gl_FragColor = vec4(outCol.w, 0.0, 0.0, 1.0);
             //gl_FragColor = vec4(aux, 0.0, 0.0, 1.0);
@@ -717,10 +728,10 @@
         uniform sampler2D inputChannel;
 
         void main(void) {
-            //float col = texture2D(inputChannel, vTextureCoord).w;
-            float col = 1.0;
+            float col = texture2D(inputChannel, vTextureCoord).w;
+            //float col = 1.0;
 
-            gl_FragColor = vec4(0.0, 0.0, col, 1.0);
+            gl_FragColor = vec4(col, col, col, 1.0);
         }
 
     </script>
@@ -751,14 +762,14 @@
             vec4 colChannel0 = texture2D(uChannelOriginalScene, vTextureCoord);
             vec4 colChannel1 = texture2D(uChannelBluredScene, vTextureCoord);
 
-            gl_FragColor = vec4(colChannel1.www, 1.0); return;
+            //gl_FragColor = vec4(colChannel1.www, 1.0); return;
 
             // Blur texture is lower resolution so only blend it in if the pixel
             // is out of focus. Use a nice blend to avoid an obvious boundary
             colChannel1.w = clamp(1000.0 * abs(colChannel1.w) - 0.001, 0.0, 1.0);
 
             vec4 finalCol = mix(colChannel0, colChannel1, colChannel1.w);
-
+            gl_FragColor = vec4(colChannel1.xyz, 1.0); return;
             gl_FragColor = finalCol;
             //gl_FragColor = texture2D(uChannelOriginalScene, vTextureCoord);
             //gl_FragColor = texture2D(uChannelBluredScene, vTextureCoord);
@@ -838,7 +849,10 @@
 
         var Aperture = 0.6; // 1.0
         var focalLength = 2.07;
-        var focalPlane = 5.0;
+        var focalPlane = 10.0;
+
+        //var _focalPlane = 10.0;
+        var _focalPlane = 0.0;
 
 
 		function initGL(canvas) {
@@ -3319,10 +3333,14 @@
 
             //var CoCScale = (Aperture * focalLength * focalPlane * (zFar - zNear)) / ((focalPlane - focalLength) * zNear * zFar);
             //var CoCBias = (Aperture * focalLength * (zNear - focalPlane)) / (focalPlane - focalLength) * zNear;
+            auxFocalPlane = _focalPlane*zFar;
+            console.log("FOCALPLANE: "+auxFocalPlane);
 
-            var CoCScale = (Aperture * focalLength * focalPlane * (zFar - zNear)) / ((focalPlane = focalLength) * zNear * zFar);
-            var CoCBias = (Aperture * focalLength * (zNear - focalPlane)) / ((focalPlane - focalLength) * zNear);
+            var CoCScale = (Aperture * focalLength * auxFocalPlane * (zFar - zNear)) / ((auxFocalPlane - focalLength) * zNear * zFar);
+            var CoCBias = (Aperture * focalLength * (zNear - auxFocalPlane)) / ((auxFocalPlane - focalLength) * zNear);
 
+            //console.log("CoCScale: "+CoCScale);
+            //console.log("CoCBias: "+CoCBias);
 
             gl.uniform1f(shaderProgramCoCSizePass.CoCScaleUniform, CoCScale);
             gl.uniform1f(shaderProgramCoCSizePass.CoCBiasUniform, CoCBias);
@@ -3368,7 +3386,7 @@
         }
 
         function drawDebugPixelCoC(enableBorder) {
-            gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+            //gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
 
             gl.useProgram(shaderProgramDebugCoC);
 
@@ -3477,7 +3495,7 @@
 
             gl.viewport(3 * (gl.viewportWidth/4), 1*(gl.viewportHeight/4.0), gl.viewportWidth/4.0, gl.viewportHeight/4.0);
             //shaderProgramDebugCoC
-            //drawDebugPixelCoC(1);
+            drawDebugPixelCoC(1);
             //drawScreenTexture(textureFramebufferCoCSize);
 
             gl.viewport(0 * (gl.viewportWidth/4), 0*(gl.viewportHeight/4.0), gl.viewportWidth/4.0, gl.viewportHeight/4.0);
@@ -3561,12 +3579,17 @@
             }
 
             if (currentlyPressedKeys[73]) {
-                focalPlane += 0.01;
-                console.log("FocalPlane: "+focalPlane);
+                if (_focalPlane < 0.99) {
+                    _focalPlane += 0.001;    
+                }
+                
+                console.log("_focalPlane: "+_focalPlane);
             }
             if (currentlyPressedKeys[75]) {
-                focalPlane -= 0.01;
-                console.log("FocalPlane: "+focalPlane);
+                if (_focalPlane > 0.0) {
+                    _focalPlane -= 0.001;
+                }
+                console.log("_focalPlane: "+_focalPlane);
             }
 
             if (currentlyPressedKeys[79]) {
@@ -3581,7 +3604,7 @@
             if (currentlyPressedKeys[32]) {
                 console.log("CAMERA STATS: ");
                 console.log("Aperture: "+Aperture);
-                console.log("FocalPlane: "+focalPlane);
+                console.log("focalPlane: "+_focalPlane);
                 console.log("focalLength: "+focalLength);
                 console.log("-*-=*=-*-=*=-*-=*=-*-=*=-*-=*=-*-=*=-*-=*=");
             }
