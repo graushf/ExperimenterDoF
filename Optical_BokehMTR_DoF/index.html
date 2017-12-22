@@ -430,18 +430,6 @@
                 #endif
                 sampleCount0 += GatherAndApply(vTextureCoord + step0, baseColour.w, outputColor, stepDistance, outputColor);
 
-                vec4 aux = texture2D(uSampler, vTextureCoord);
-                bool blurNear = aux.w < 0.0;
-                if (blurNear) {
-                    gl_FragData[0] = vec4(1.0, 0.0, 0.0, 1.0);
-                } else {
-                    gl_FragData[0] = vec4(0.0, 0.0, 1.0, 1.0)    ;
-                }
-                return;
-                gl_FragData[0] = vec4(aux.w, aux.w, aux.w, 1.0); 
-
-                gl_FragData[1] = outputColor2; return;
-
                 // Diagonal blur
                 vec2 step1 = vec2(xStep, 0.5) * stepDistance;
                 sampleCount1 += GatherAndApply(vTextureCoord + step1, baseColour.w, outputColor2, stepDistance, outputColor2);
@@ -559,7 +547,6 @@
             vec4 finalCol;
 
             vec4 baseColour = texture2D(BlurPass1_1, vTextureCoord);
-
             // Two sets of colour to accumulate this time.
             vec4 outputColor0 = vec4(0.0, 0.0, 0.0, baseColour.w);
             vec4 outputColor1 = vec4(0.0, 0.0, 0.0, baseColour.w);
@@ -713,7 +700,8 @@
 
             // Get CoCScale and CoCBias from aperture, focal length, focal plane and 
             // cam near/far, as per equations
-            outCol.w = outCol.w * CoCScale  + CoCBias;
+            outCol.w = (outCol.w * CoCScale)  + CoCBias;
+            //outCol.w = outCol.w * CoCScale  + 0.0;
             gl_FragColor = outCol;
             //gl_FragColor = vec4(outCol.w, 0.0, 0.0, 1.0);
             //gl_FragColor = vec4(aux, 0.0, 0.0, 1.0);
@@ -727,11 +715,17 @@
 
         uniform sampler2D inputChannel;
 
-        void main(void) {
-            float col = texture2D(inputChannel, vTextureCoord).w;
-            //float col = 1.0;
+        uniform int uDrawBorder;
 
-            gl_FragColor = vec4(col, col, col, 1.0);
+        void main(void) {
+
+            gl_FragColor = vec4(1.0, 0.0, 0.0, 1.0);
+            if (uDrawBorder == 0) {
+                float col = texture2D(inputChannel, vTextureCoord).w;
+                gl_FragColor = vec4(col, col, col, 1.0);
+            } else {
+                gl_FragColor = vec4(0.46, 0.71, 0.0, 1.0);
+            }
         }
 
     </script>
@@ -776,6 +770,140 @@
             //gl_FragColor = vec4(1.0, 0.0, 0.0, 1.0);
         }
     </script>
+
+    <script id="DebugPass-fs" type="x-shader/x-fragment">
+        precision mediump float;
+
+        uniform sampler2D uSampler;
+        uniform float bokehStrength;
+        uniform vec2 uResolution;
+        varying vec2 vTextureCoord;
+
+        uniform float uTime;
+
+        //#define USE_RANDOM 
+
+        const int NUM_SAMPLES = 32;
+
+        float OneOverScreenWidth;
+        float OneOverScreenHeight;
+
+        float GatherAndApply(vec2 uv, float baseCoC, vec4 currCol, float stepDistance, inout vec4 outColor);
+        float hash12n(vec2 p);
+
+        void main() {
+            OneOverScreenWidth = 1.0/uResolution.x;
+            OneOverScreenHeight = 1.0/uResolution.y;
+
+            vec4 baseColour = texture2D(uSampler, vTextureCoord);
+
+            vec4 outputColor = vec4(0.0, 0.0, 0.0, baseColour.w);
+            vec4 outputColor2 = vec4(0.0, 0.0, 0.0, baseColour.w);
+
+            float sampleCount0 = 0.0;
+            float sampleCount1 = 0.0;
+
+            // Diagonal blur step, corrector for aspect ratio
+            float xStep = 0.866 * (OneOverScreenWidth/OneOverScreenHeight);
+
+            for (int i = 0; i < NUM_SAMPLES; i++)
+            {
+                float stepDistance = (float(i) + 0.5) * OneOverScreenHeight * bokehStrength;
+
+                // Vertical blur.
+                vec2 step0 = vec2(0.0, -1.0) * stepDistance;
+                #if defined(USE_RANDOM) 
+                    //step0 += (hash12n(step0 + fract(uTime)/1000.0+0.001)) * 1.0;
+                    step0 += (hash12n(step0/100000000.0)) * 1.0;
+                #endif
+                sampleCount0 += GatherAndApply(vTextureCoord + step0, baseColour.w, outputColor, stepDistance, outputColor);
+
+                vec4 aux = texture2D(uSampler, vTextureCoord);
+                bool blurNear = aux.w < 0.0;
+                
+                if (blurNear) {
+                    gl_FragColor = vec4(1.0, 0.0, 0.0, 1.0);
+                } else {
+                    gl_FragColor = vec4(0.0, 0.0, 1.0, 1.0);
+                }
+                return;
+
+                // Diagonal blur
+                vec2 step1 = vec2(xStep, 0.5) * stepDistance;
+                sampleCount1 += GatherAndApply(vTextureCoord + step1, baseColour.w, outputColor2, stepDistance, outputColor2);
+            }
+
+            //Normalize if any color was added. 
+            outputColor.xyz = sampleCount0 > 0.0 ? (outputColor.xyz / sampleCount0) : baseColour.xyz;
+            outputColor2.xyz = sampleCount1 > 0.0 ? (outputColor2.xyz / sampleCount1) : baseColour.xyz;
+
+            // The second render target contains both of these added together. Don't divide 
+            // by two here, as it'll be combined again and divided by three in the next pass.
+            outputColor2.xyz += outputColor.xyz;
+
+            // For the combined term, set the CoC to the blurriest of the two inputs
+            if (abs(outputColor.w) > abs(outputColor2.w))
+            {
+                outputColor2.w = outputColor.w;
+            }
+
+        }
+
+        float GatherAndApply(vec2 uv, float baseCoC, vec4 currCol, float stepDistance, inout vec4 outColor) {
+            outColor = currCol;
+            vec4 col = texture2D(uSampler, uv);
+
+            // CoC < 0 means the pixel is in front of the focal plane.
+            bool blurNear = col.w < 0.0;
+            float absCoC = abs(col.w);
+            //float absCoC = abs(bokehStrength);
+
+            //Check if the CoC of the sampled pixel is big enough to scatter here, and 
+            //the sampled pixel is in front of the focal plane or
+            //this pixel is behind the focal plane and the sampled pixel isn't too far behind it.
+            if ((absCoC > stepDistance) && (blurNear || (baseCoC > 0.0 && absCoC < baseCoC * 2.0)))
+            {
+                // Sort out the CoC of the blurred image, by taking the biggest CoC to maintain the 
+                // hexagon shape in the second pass.
+                // Near-blurred pixels should continue to blur over far pixels. Far pixels don't blur
+                // over near pixels so that case can be ignored.
+                if (blurNear) {
+                    if (outColor.w < 0.0)
+                    {
+                        // This pixel is already near-blurred, so see if the sampled CoC is any bigger.
+                        outColor.w = min(outColor.w, col.w);
+                    } 
+                    else 
+                    {
+                        // This pixel is behind the focal plane, so only continue with the near-blur if 
+                        // that is stronger. Going to get artifacts either way on depth edges with different
+                        // coloured pixels.
+                        if (-col.w > outColor.w)
+                        {
+                            outColor.w = col.w;
+                        }
+                    }
+                }
+
+                // Now accumulate the colour. Allow partial sampling at the pixel boundary for smootheness. 
+                float sampleFraction = clamp((absCoC - stepDistance) / OneOverScreenHeight, 0.0, 1.0);
+                outColor.xyz += sampleFraction * col.xyz;
+
+                return sampleFraction;
+            }
+
+            // float sampleFraction = clamp((absCoC - stepDistance) / OneOverScreenHeight, 0.0, 1.0);
+            // outColor.xyz += sampleFraction * col.xyz;
+            // return sampleFraction;
+
+            // No colour added.
+            return 0.0;
+        }
+
+    </script>
+
+
+
 
 	<script type="text/javascript">
 
@@ -847,8 +975,8 @@
         // var focalLength = 0.021;
         // var focalPlane = 5.0;
 
-        var Aperture = 0.6; // 1.0
-        var focalLength = 2.07;
+        var Aperture = 0.6; // 1.0 // 0.6 
+        var focalLength = 0.021;
         var focalPlane = 10.0;
 
         //var _focalPlane = 10.0;
@@ -1183,6 +1311,23 @@
             }
         }
 
+
+        var shaderProgramDebugPass1;
+        //DebugPass-fs
+        function initShadersDebugPass1() {
+            var fragmentShader = getShader(gl, "DebugPass-fs");
+            var vertexShader = getShader(gl, "shader-vs-postprocess");
+
+            shaderProgramDebugPass1 = gl.createProgram();
+            gl.attachShader(shaderProgramDebugPass1, vertexShader);
+            gl.attachShader(shaderProgramDebugPass1, fragmentShader);
+            gl.linkProgram(shaderProgramDebugPass1);
+
+            if (!gl.getProgramParameter(shaderProgramDebugPass1, gl.LINK_STATUS)) {
+                alert("Could not initialise shaders");
+            }
+        }
+
 		function handleLoadedTexture(texture) {
 			gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true);
 			gl.bindTexture(gl.TEXTURE_2D, texture);
@@ -1456,6 +1601,8 @@
 			checkerGrayTexture = loadTexture("http://localhost/POC_DoF_Adv/3D_Scene/checker_grey_pot.jpg");
 
             bokeh2DTexture = loadTexture("http://localhost/ExperimenterDoF/Optical_Bokeh_DoF/texture_2d_bokeh3.jpg");
+
+            skyTexture = loadTexture("http://localhost/ExperimenterDoF/Optical_BokehMTR_DoF/texture_sky_pot.jpg");
 		}
 
 		function createAndSetupTexture() 
@@ -2126,6 +2273,184 @@
 		}
 
 
+        function drawPlaneHorizon(programShading) {
+            gl.useProgram(programShading);
+            //mat4.perspectiveAlt(45, gl.viewportWidth / gl.viewportHeight, 0.1, 500.0, pMatrix);
+            pMatrix = myCamera.GetProjectionMatrix();
+
+            // if (programShading == shaderProgram) {
+            //  gl.enableVertexAttribArray(programShading.vertexPositionAttribute);
+            //  gl.enableVertexAttribArray(programShading.vertexNormalAttribute);
+            //  gl.enableVertexAttribArray(programShading.textureCoordAttribute);
+
+            //  gl.uniform1i(programShading.showSpecularHighlightsUniform, 1);
+            //  var lighting = 1;
+            //  gl.uniform1i(programShading.useLightingUniform, lighting);
+
+            //  if (lighting) {
+            //      gl.uniform3f(
+            //          programShading.ambientColorUniform,
+            //          0.2, 0.2, 0.2
+            //      );
+
+            //      gl.uniform3f(
+            //          programShading.pointLightingLocationUniform, 
+            //          -10.0, 4.0, -20.0
+            //      );
+
+            //      gl.uniform3f(
+            //          programShading.pointLightingSpecularColorUniform,
+            //          0.8, 0.8, 0.8
+            //      );
+
+            //      gl.uniform3f(
+            //          programShading.pointLightingDiffuseColorUniform,
+            //          0.8, 0.8, 0.8
+            //      );
+            //  }
+
+            //  gl.uniform1i(programShading.useTexturesUniform, 1);
+
+            //  gl.activeTexture(gl.TEXTURE0);
+            //  gl.bindTexture(gl.TEXTURE_2D, checkerGrayTexture);
+            //  gl.uniform1i(programShading.samplerUniform, 0);
+
+            //  gl.uniform1f(programShading.materialShininessUniform, 32.0);
+
+            //  gl.bindBuffer(gl.ARRAY_BUFFER, planeVertexTextureCoordBuffer);
+            //  gl.vertexAttribPointer(programShading.textureCoordAttribute, planeVertexTextureCoordBuffer.itemSize, gl.FLOAT, false, 0, 0);
+
+            //  gl.bindBuffer(gl.ARRAY_BUFFER, planeVertexNormalBuffer);
+            //  gl.vertexAttribPointer(programShading.vertexNormalAttribute, planeVertexNormalBuffer.itemSize, gl.FLOAT, false, 0, 0);
+
+            // }
+            if (programShading == shaderProgramDepth) {
+                gl.enableVertexAttribArray(programShading.vertexPositionAttribute);
+                gl.disableVertexAttribArray(shaderProgram.vertexNormalAttribute);
+                gl.disableVertexAttribArray(shaderProgram.textureCoordAttribute);
+                gl.uniform1f(programShading.nearUniform, myCamera.GetNearValue());
+                gl.uniform1f(programShading.farUniform, myCamera.GetFarValue());
+            }
+            if (programShading == shaderProgramFocalDepth) {
+                gl.enableVertexAttribArray(programShading.vertexPositionAttribute);
+                gl.disableVertexAttribArray(shaderProgram.vertexNormalAttribute);
+                gl.disableVertexAttribArray(shaderProgram.textureCoordAttribute);
+                gl.uniform1f(programShading.nearUniform, myCamera.GetNearValue());
+                gl.uniform1f(programShading.farUniform, myCamera.GetFarValue());
+                
+                gl.uniform3f(programShading.cameraFrontsUniform, myCamera.Front[0], myCamera.Front[1], myCamera.Front[2]);
+
+                //console.log(myCamera.Position[0]);
+                //console.log(myCamera.Position[1]);
+                //console.log(myCamera.Position[2]);
+                gl.uniform3f(programShading.cameraPosUniform, myCamera.Position[0], myCamera.Position[1], myCamera.Position[2]);
+
+                gl.uniform3f(programShading.focalPlanePosUniform, positionFocalPlane[0], positionFocalPlane[1], positionFocalPlane[2]);
+
+                var aux = vec3.create();
+                var _aux = vec3.create();
+                vec3.add(_aux, positionFocalPlane, myCamera.Position);
+                vec3.scaleAndAdd(aux, myCamera.Position, _aux, -1);
+                var uFdist = Math.sqrt(vec3.squaredLength(aux));
+                //console.log(uFdist);
+                //console.log(positionFocalPlane);
+                gl.uniform1f(programShading.focalDistanceUniform, uFocalDistance);
+
+            }
+            if (programShading == shaderProgramLightingPhong) {
+                //console.log("PHONG SHADING");
+
+                gl.enableVertexAttribArray(programShading.vertexPositionAttribute);
+                gl.enableVertexAttribArray(programShading.vertexNormalAttribute);
+                gl.enableVertexAttribArray(programShading.textureCoordAttribute);
+
+                gl.uniform3f(programShading.objectColorUniform, 1.0, 0.5, 0.31);
+                gl.uniform3f(programShading.lightColorUniform, 1.0, 1.0, 1.0);
+                gl.uniform3f(programShading.lightPosUniform, lightPos[0], lightPos[1], lightPos[1]);
+                gl.uniform3f(programShading.viewPosUniform, myCamera.Position[0], myCamera.Position[1], myCamera.Position[2]);
+
+                gl.uniform1i(gl.getUniformLocation(programShading, "uUseTexture"), 1);
+                gl.uniform1i(gl.getUniformLocation(programShading, "uDisableLighting"), 0);
+
+                gl.activeTexture(gl.TEXTURE0);
+                gl.bindTexture(gl.TEXTURE_2D, skyTexture);
+                gl.uniform1i(gl.getUniformLocation(programShading, "material.diffuse"), 0);
+                gl.uniform1f(gl.getUniformLocation(programShading, "material.shininess"), 1.0);
+                gl.uniform1i(gl.getUniformLocation(programShading, "material.hasSpecular"), 0);
+
+                gl.uniform3f(gl.getUniformLocation(programShading, "dirLight.direction"), -0.2, -1, -0.3);
+                gl.uniform3f(gl.getUniformLocation(programShading, "dirLight.ambient"), 0.05, 0.05, 0.05);
+                gl.uniform3f(gl.getUniformLocation(programShading, "dirLight.diffuse"), 0.8, 0.8, 0.8);
+                gl.uniform3f(gl.getUniformLocation(programShading, "dirLight.specular"), 0.5, 0.5, 0.5);
+
+                gl.uniform3f(gl.getUniformLocation(programShading, "pointLights[0].position"), lightPointPos[0], lightPointPos[1], lightPointPos[2]);
+                gl.uniform3f(gl.getUniformLocation(programShading, "pointLights[0].ambient"), 0.05, 0.05, 0.05);
+                gl.uniform3f(gl.getUniformLocation(programShading, "pointLights[0].diffuse"), 0.8, 0.8, 0.8);
+                gl.uniform3f(gl.getUniformLocation(programShading, "pointLights[0].specular"), 1.0, 1.0, 1.0);
+                gl.uniform1f(gl.getUniformLocation(programShading, "pointLights[0].constant"), 1.0);
+                gl.uniform1f(gl.getUniformLocation(programShading, "pointLights[0].linear"), 0.09);
+                gl.uniform1f(gl.getUniformLocation(programShading, "pointLights[0].quadratic"), 0.032);
+
+
+                gl.bindBuffer(gl.ARRAY_BUFFER, planeVertexNormalBuffer);
+                gl.vertexAttribPointer(programShading.vertexNormalAttribute, planeVertexNormalBuffer.itemSize, gl.FLOAT, false, 0, 0);
+
+                gl.bindBuffer(gl.ARRAY_BUFFER, planeVertexTextureCoordBuffer);
+                gl.vertexAttribPointer(programShading.textureCoordAttribute, planeVertexTextureCoordBuffer.itemSize, gl.FLOAT, false, 0, 0);
+            }
+            if (programShading == shaderProgramDepthObjectSpace) {
+                gl.enableVertexAttribArray(programShading.vertexPositionAttribute);
+                gl.disableVertexAttribArray(shaderProgram.vertexNormalAttribute);
+                gl.disableVertexAttribArray(shaderProgram.textureCoordAttribute);
+                gl.uniform1f(programShading.nearUniform, myCamera.GetNearValue());
+                gl.uniform1f(programShading.farUniform, myCamera.GetFarValue());
+            }
+            if (programShading == shaderProgramDepthPass) {
+                gl.enableVertexAttribArray(programShading.vertexPositionAttribute);
+                gl.uniform1f(gl.getUniformLocation(programShading, "uFar"), myCamera.GetFarValue());
+                gl.uniform1f(gl.getUniformLocation(programShading, "uNear"), myCamera.GetNearValue());
+                //gl.disableVertexAttribArray(shaderProgram.vertexNormalAttribute);
+                //gl.disableVertexAttribArray(shaderProgram.textureCoordAttribute);
+            }
+
+            mat4.identity(mMatrix);
+            var aux = mat4.create();
+            mat4.identity(aux);
+
+            mat4.identity(vMatrix);
+            //mat4.translate(vMatrix, vMatrix, [0, 0, -300]);
+            vMatrix = myCamera.GetViewMatrix();
+
+
+            // FIRST MATRIX TRANSFORMS
+            //mat4.translate(mvMatrix, [0.0, 0.0, -60]);
+            //mat4.rotate(mvMatrix, degToRad(23.4), [1, 1, 1]);
+            //mat4.rotate(mvMatrix, degToRad(teapotAngle), [0, 1, 0]);
+
+            // SECOND MATRIX TRANSFORMS
+            //mat4.scale(mvMatrix, [2.2, 2.2, 2.2]);
+            mat4.translate(mMatrix, mMatrix, [0, 170, -1200]);
+            //mat4.fromScaling(mvMatrix, [8.2, 8.2, 8.2]); 
+
+            //mat4.translate(mvMatrix, aux, vec3.fromValues(0.5, 0.0, 0.0));
+            //mat4.rotate(mMatrix, mMatrix, degToRad(23.4), [1, 0, 0]);
+            mat4.rotate(mMatrix, mMatrix, degToRad(90), [1, 0, 0]);
+            //mat4.multiplyScalar(mvMatrix, mvMatrix, [1.0, 1.0, 1.0]);
+            mat4.fromScaling(aux, [2000.0, 2000.0, 2000.0]);
+            mat4.multiply(mMatrix, mMatrix, aux);
+
+            
+            gl.bindBuffer(gl.ARRAY_BUFFER, planeVertexPositionBuffer);
+            gl.vertexAttribPointer(programShading.vertexPositionAttribute, planeVertexPositionBuffer.itemSize, gl.FLOAT, false, 0, 0);
+
+            
+            gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, planeVertexIndexBuffer);
+            setMatrixUniforms(programShading);
+            gl.drawElements(gl.TRIANGLES, planeVertexIndexBuffer.numItems, gl.UNSIGNED_SHORT, 0);
+        }
+
+
+
         function drawSphere(programShading, translatePos, scaleVal, color) {
             gl.useProgram(programShading);
 
@@ -2284,7 +2609,9 @@
 			gl.viewport(0, 0, gl.viewportWidth, gl.viewportHeight);
 			gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
 
-			drawPlane(programToDraw);
+			drawPlaneHorizon(programToDraw);
+            drawPlane(programToDraw);
+
 			drawTeapot(programToDraw, vec3.fromValues(0, 8.0, 400.0));
 			drawTeapot(programToDraw, vec3.fromValues(0, 8.0, 100.0));
 			drawTeapot(programToDraw, vec3.fromValues(0, 8.0, 0.0));
@@ -3339,8 +3666,8 @@
             var CoCScale = (Aperture * focalLength * auxFocalPlane * (zFar - zNear)) / ((auxFocalPlane - focalLength) * zNear * zFar);
             var CoCBias = (Aperture * focalLength * (zNear - auxFocalPlane)) / ((auxFocalPlane - focalLength) * zNear);
 
-            //console.log("CoCScale: "+CoCScale);
-            //console.log("CoCBias: "+CoCBias);
+            console.log("CoCScale: "+CoCScale);
+            console.log("CoCBias: "+CoCBias);
 
             gl.uniform1f(shaderProgramCoCSizePass.CoCScaleUniform, CoCScale);
             gl.uniform1f(shaderProgramCoCSizePass.CoCBiasUniform, CoCBias);
@@ -3383,6 +3710,48 @@
 
             gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, screenFillingIndexBuffer);
             gl.drawElements(gl.TRIANGLES, screenFillingIndexBuffer.numItems, gl.UNSIGNED_SHORT, 0);
+        }
+
+        function drawDebugPass1() {
+            //gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+
+            gl.useProgram(shaderProgramDebugPass1);
+
+            shaderProgramDebugPass1.vertexPositionAttribute = gl.getAttribLocation(shaderProgramDebugPass1, "aVertexPosition");
+            gl.enableVertexAttribArray(shaderProgramDebugPass1.vertexPositionAttribute);
+
+            shaderProgramDebugPass1.textureCoordAttribute = gl.getAttribLocation(
+                shaderProgramDebugPass1, "aTextureCoord");
+            gl.enableVertexAttribArray(shaderProgramDebugPass1.textureCoordAttribute);
+
+            shaderProgramDebugPass1.samplerUniform = gl.getUniformLocation(shaderProgramDebugPass1, "uSampler");
+
+            shaderProgramDebugPass1.resolutionUniform = gl.getUniformLocation(shaderProgramDebugPass1, "uResolution");
+
+            shaderProgramDebugPass1.bokehStrengthUniform = gl.getUniformLocation(shaderProgramDebugPass1, "bokehStrength");
+
+            shaderProgramDebugPass1.timeUnifom = gl.getUniformLocation(shaderProgramDebugPass1, "uTime");
+
+            //gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+
+            gl.bindBuffer(gl.ARRAY_BUFFER, screenFillingVertexPositionBuffer);
+            gl.vertexAttribPointer(shaderProgramDebugPass1.vertexPositionAttribute, screenFillingVertexPositionBuffer.itemSize, gl.FLOAT, false, 0, 0);
+
+            gl.bindBuffer(gl.ARRAY_BUFFER, screenFillingTextureCoordBuffer);
+            gl.vertexAttribPointer(shaderProgramDebugPass1.textureCoordAttribute, screenFillingTextureCoordBuffer.itemSize, gl.FLOAT, false, 0, 0);
+
+            gl.activeTexture(gl.TEXTURE0);
+            gl.bindTexture(gl.TEXTURE_2D, textureFramebufferCoCSize);
+            gl.uniform1i(shaderProgramDebugPass1.samplerUniform, 0);
+
+            gl.uniform2f(shaderProgramDebugPass1.resolutionUniform, gl.viewportWidth, gl.viewportHeight);
+
+            gl.uniform1f(shaderProgramDebugPass1.bokehStrengthUniform, bokehStrength);
+
+            gl.uniform1f(shaderProgramDebugPass1.timeUniform, elapsed);
+
+            gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, screenFillingIndexBuffer);
+            gl.drawElements(gl.TRIANGLES, screenFillingIndexBuffer.numItems, gl.UNSIGNED_SHORT, 0);        
         }
 
         function drawDebugPixelCoC(enableBorder) {
@@ -3484,29 +3853,37 @@
             gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
 
             //drawScreenTexture(MRTfbData.t[0], 0);
-            gl.viewport(0, gl.viewportHeight/4.0 , gl.viewportWidth/4.0 * 3.0, gl.viewportHeight/4.0*3.0);
+            gl.viewport(0, 2*gl.viewportHeight/5.0 , gl.viewportWidth/4.0 * 3.0, gl.viewportHeight/5.0*3.0);
             drawApplyDoFPass();
 
-            gl.viewport(3 * (gl.viewportWidth/4), 3*(gl.viewportHeight/4.0), gl.viewportWidth/4.0, gl.viewportHeight/4.0);
+            gl.viewport(3 * (gl.viewportWidth/4), 4*(gl.viewportHeight/5.0), gl.viewportWidth/4.0, gl.viewportHeight/5.0);
             drawScreenTexture(textureFramebufferDepth, 1);
 
-            gl.viewport(3 * (gl.viewportWidth/4), 2*(gl.viewportHeight/4.0), gl.viewportWidth/4.0, gl.viewportHeight/4.0);
+            gl.viewport(3 * (gl.viewportWidth/4), 3*(gl.viewportHeight/5.0), gl.viewportWidth/4.0, gl.viewportHeight/5.0);
             drawScreenTexture(textureFramebufferCoCSize, 1);
 
-            gl.viewport(3 * (gl.viewportWidth/4), 1*(gl.viewportHeight/4.0), gl.viewportWidth/4.0, gl.viewportHeight/4.0);
+            gl.viewport(3 * (gl.viewportWidth/4), 2*(gl.viewportHeight/5.0), gl.viewportWidth/4.0, gl.viewportHeight/5.0);
             //shaderProgramDebugCoC
             drawDebugPixelCoC(1);
             //drawScreenTexture(textureFramebufferCoCSize);
 
-            gl.viewport(0 * (gl.viewportWidth/4), 0*(gl.viewportHeight/4.0), gl.viewportWidth/4.0, gl.viewportHeight/4.0);
+            gl.viewport(0 * (gl.viewportWidth/4), 1*(gl.viewportHeight/5.0), gl.viewportWidth/4.0, gl.viewportHeight/5.0);
             drawScreenTexture(MRTfbData.t[0], 1);
             //MRTfbData.t[0]
 
-            gl.viewport(1 * (gl.viewportWidth/4), 0*(gl.viewportHeight/4.0), gl.viewportWidth/4.0, gl.viewportHeight/4.0);
+            gl.viewport(1 * (gl.viewportWidth/4), 1*(gl.viewportHeight/5.0), gl.viewportWidth/4.0, gl.viewportHeight/5.0);
             drawScreenTexture(MRTfbData.t[1], 1);
 
-            gl.viewport(2 * (gl.viewportWidth/4), 0*(gl.viewportHeight/4.0), gl.viewportWidth/4.0, gl.viewportHeight/4.0);
+            gl.viewport(2 * (gl.viewportWidth/4), 1*(gl.viewportHeight/5.0), gl.viewportWidth/4.0, gl.viewportHeight/5.0);
             drawScreenTexture(textureFramebufferApplyDoF, 1);
+
+
+
+
+            gl.viewport(0 * (gl.viewportWidth/4), 0*(gl.viewportHeight/5.0), gl.viewportWidth/4.0, gl.viewportHeight/5.0);
+            drawDebugPass1();
+
+
         }
 
 		var currentlyPressedKeys = {};
@@ -3909,6 +4286,8 @@
 
             initShadersDebugCoC();
 
+            initShadersDebugPass1();
+
 			gl.clearColor(0.0, 0.0, 0.0, 1.0);
 			gl.enable(gl.DEPTH_TEST);
 
@@ -3927,6 +4306,6 @@
 	</head>
 
 	<body onload="webGLStart();">
-		<canvas id="3D_scene-canvas" style="border: none;" width="1600" height="900"></canvas>
+		<canvas id="3D_scene-canvas" style="border: none;" width="1600" height="1125"></canvas>
 	</body>
 </html>
