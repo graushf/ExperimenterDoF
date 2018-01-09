@@ -361,6 +361,8 @@
 
         uniform float normColor;
 
+        uniform float multiplyColor;
+
         void main(void) {
             if (uDrawBorder == 0) {
                 vec3 vSample = texture2D(uSampler, vTextureCoord).rgb;
@@ -370,9 +372,17 @@
                     vec4 vSample = texture2D(uSampler, vTextureCoord);
                     if (vSample.w < 0.0) {
                         vSample.w = abs(vSample.w);
-                        gl_FragColor = vec4(vSample.w, 0.0, 0.0, 1.0); return;
+                        gl_FragColor = vec4(vSample.w, 0.0, 0.0, 1.0); 
+                        if (multiplyColor > 0.0) {
+                            gl_FragColor.x *= multiplyColor;
+                        }
+                        return;
                     } else {
-                        gl_FragColor = vec4(0.0, 0.0, vSample.w, 1.0); return;
+                        gl_FragColor = vec4(0.0, 0.0, vSample.w, 1.0);
+                        if (multiplyColor > 0.0) {
+                            gl_FragColor.z *= multiplyColor;
+                        }
+                        return;
                     }
                 }
 
@@ -417,7 +427,7 @@
 
         //#define USE_RANDOM 
 
-        const int NUM_SAMPLES = 32;
+        const int NUM_SAMPLES = 8;
 
         float OneOverScreenWidth;
         float OneOverScreenHeight;
@@ -446,10 +456,6 @@
 
                 // Vertical blur.
                 vec2 step0 = vec2(0.0, -1.0) * stepDistance;
-                #if defined(USE_RANDOM) 
-                    //step0 += (hash12n(step0 + fract(uTime)/1000.0+0.001)) * 1.0;
-                    step0 += (hash12n(step0/100000000.0)) * 1.0;
-                #endif
                 sampleCount0 += GatherAndApply(vTextureCoord + step0, baseColour.w, outputColor, stepDistance, outputColor);
 
                 // Diagonal blur
@@ -458,8 +464,8 @@
             }
 
             //Normalize if any color was added. 
-            outputColor.xyz = sampleCount0 > 0.0 ? (outputColor.xyz / sampleCount0) : baseColour.xyz;
-            outputColor2.xyz = sampleCount1 > 0.0 ? (outputColor2.xyz / sampleCount1) : baseColour.xyz;
+            outputColor.xyz = sampleCount0 > 0.0 ? (outputColor.xyz / sampleCount0) : vec3(0.0, 0.0, 0.0);
+            outputColor2.xyz = sampleCount1 > 0.0 ? (outputColor2.xyz / sampleCount1) : vec3(0.0, 1.0, 0.0);
 
             // The second render target contains both of these added together. Don't divide 
             // by two here, as it'll be combined again and divided by three in the next pass.
@@ -561,7 +567,7 @@
 
         //#define USE_RANDOM 
 
-        const int NUM_SAMPLES = 32;
+        const int NUM_SAMPLES = 8;
 
         float OneOverScreenWidth;
         float OneOverScreenHeight;
@@ -751,7 +757,8 @@
 
             // Get CoCScale and CoCBias from aperture, focal length, focal plane and 
             // cam near/far, as per equations
-            outCol.w = (outCol.w * CoCScale) + CoCBias;
+            outCol.w = (CoCScale * outCol.w) + CoCBias; //Implementation Purple Space
+            //outCol.w = abs(outCol.w * CoCScale + CoCBias); Dice Paper
             //outCol.w = outCol.w * CoCScale  + 0.0;
             gl_FragColor = outCol;
             //gl_FragColor = vec4(outCol.w, 0.0, 0.0, 1.0);
@@ -1012,7 +1019,7 @@
 		var elapsed;
         var time_start;
 
-        var bokehStrength = 0.9;
+        var bokehStrength = 1.0;
 
 
         var lightPos = vec3.fromValues(10.0, 0.0, 0.0);
@@ -1032,6 +1039,9 @@
 
         //var _focalPlane = 10.0;
         var _focalPlane = 0.0;
+
+        var CoCScale;
+        var CoCBias;
 
 		function initGL(canvas) {
 			try {
@@ -2791,7 +2801,7 @@
 			gl.drawElements(gl.TRIANGLES, screenFillingIndexBuffer.numItems, gl.UNSIGNED_SHORT, 0);
 		}
 
-        function drawScreenTexture(textureToDraw, enableBorder, drawCoC, normColor) {
+        function drawScreenTexture(textureToDraw, enableBorder, drawCoC, normColor, multiplyColor) {
             gl.useProgram(shaderProgramBufferRendToText);
 
             shaderProgramBufferRendToText.vertexPositionAttribute = gl.getAttribLocation(shaderProgramBufferRendToText, "aVertexPosition");
@@ -2819,6 +2829,8 @@
 
             gl.uniform1f(gl.getUniformLocation(shaderProgramBufferRendToText, "drawCoC"), drawCoC);
             gl.uniform1f(gl.getUniformLocation(shaderProgramBufferRendToText, "normColor"), normColor);
+            gl.uniform1f(gl.getUniformLocation(shaderProgramBufferRendToText, "multiplyColor"), multiplyColor);
+
 
             mat4.identity(mMatrix);
             var aux = mat4.create();
@@ -3723,13 +3735,10 @@
             //var CoCScale = (Aperture * focalLength * focalPlane * (zFar - zNear)) / ((focalPlane - focalLength) * zNear * zFar);
             //var CoCBias = (Aperture * focalLength * (zNear - focalPlane)) / (focalPlane - focalLength) * zNear;
             auxFocalPlane = _focalPlane*zFar;
-            console.log("FOCALPLANE: "+auxFocalPlane);
 
-            var CoCScale = (Aperture * focalLength * auxFocalPlane * (zFar - zNear)) / ((auxFocalPlane - focalLength) * zNear * zFar);
-            var CoCBias = (Aperture * focalLength * (zNear - auxFocalPlane)) / ((auxFocalPlane - focalLength) * zNear);
-
-            console.log("CoCScale: "+CoCScale);
-            console.log("CoCBias: "+CoCBias);
+            CoCScale = (Aperture * focalLength * auxFocalPlane * (zFar - zNear)) / ((auxFocalPlane - focalLength) * zNear * zFar);
+            console.log(CoCScale);
+            CoCBias = (Aperture * focalLength * (zNear - auxFocalPlane)) / ((auxFocalPlane - focalLength) * zNear);
 
             gl.uniform1f(shaderProgramCoCSizePass.CoCScaleUniform, CoCScale);
             gl.uniform1f(shaderProgramCoCSizePass.CoCBiasUniform, CoCBias);
@@ -3922,10 +3931,10 @@
             drawApplyDoFPass();
 
             gl.viewport(3 * (gl.viewportWidth/8.0), 6*(gl.viewportHeight/7.0), gl.viewportWidth/8.0, gl.viewportHeight/7.0);
-            drawScreenTexture(textureFramebufferDepth, 1, 0.0, 0.0);
+            drawScreenTexture(textureFramebufferDepth, 1, 0.0, 0.0, 0.0);
 
             gl.viewport(3 * (gl.viewportWidth/8.0), 5*(gl.viewportHeight/7.0), gl.viewportWidth/8.0, gl.viewportHeight/7.0);
-            drawScreenTexture(textureFramebufferCoCSize, 1, 0.0, 0.0);
+            drawScreenTexture(textureFramebufferCoCSize, 1, 0.0, 0.0, 0.0);
 
             gl.viewport(3 * (gl.viewportWidth/8.0), 4*(gl.viewportHeight/7.0), gl.viewportWidth/8.0, gl.viewportHeight/7.0);
             //shaderProgramDebugCoC
@@ -3933,18 +3942,18 @@
             //drawScreenTexture(textureFramebufferCoCSize);
 
             gl.viewport(0 * (gl.viewportWidth/8.0), 2*(gl.viewportHeight/7.0), 2*gl.viewportWidth/8.0, 2*gl.viewportHeight/7.0);
-            drawScreenTexture(MRTfbData.t[0], 1, 0.0, 0.0);
+            drawScreenTexture(MRTfbData.t[0], 1, 0.0, 0.0, 0.0);
             //MRTfbData.t[0]
 
             gl.viewport(0 * (gl.viewportWidth/8.0), 0*(gl.viewportHeight/7.0), 2*gl.viewportWidth/8.0, 2*gl.viewportHeight/7.0);
-            drawScreenTexture(MRTfbData.t[0], 1, 1.0, 0.0);
+            drawScreenTexture(MRTfbData.t[0], 1, 1.0, 0.0, 0.0);
 
 
             gl.viewport(2 * (gl.viewportWidth/8.0), 2*(gl.viewportHeight/7.0), 2*gl.viewportWidth/8.0, 2*gl.viewportHeight/7.0);
-            drawScreenTexture(MRTfbData.t[1], 1, 0.0, 1.0);
+            drawScreenTexture(MRTfbData.t[1], 1, 0.0, 1.0, 0.0);
 
             gl.viewport(2 * (gl.viewportWidth/8.0), 0*(gl.viewportHeight/7.0), 2*gl.viewportWidth/8.0, 2*gl.viewportHeight/7.0);
-            drawScreenTexture(MRTfbData.t[1], 1, 1.0, 0.0);
+            drawScreenTexture(MRTfbData.t[1], 1, 1.0, 0.0, 0.0);
 
 
             gl.viewport(4 * (gl.viewportWidth/8.0), 2*(gl.viewportHeight/7.0), 2*gl.viewportWidth/8.0, 2*gl.viewportHeight/7.0);
@@ -3963,17 +3972,27 @@
 
 
 
-
             gl.viewport(4 * (gl.viewportWidth/8.0), 6*(gl.viewportHeight/7.0), gl.viewportWidth/8.0, gl.viewportHeight/7.0);
             drawDebugPass1(); // Draws focal plane
 
+            gl.viewport(4 * (gl.viewportWidth/8.0), 4*(gl.viewportHeight/7.0), gl.viewportWidth/8.0, gl.viewportHeight/7.0);
+            drawScreenTexture(MRTfbData.t[0], 1, 1.0, 0.0, 1000.0);
+
+            gl.viewport(5 * (gl.viewportWidth/8.0), 4*(gl.viewportHeight/7.0), gl.viewportWidth/8.0, gl.viewportHeight/7.0);
+            drawScreenTexture(MRTfbData.t[1], 1, 1.0, 0.0, 1000.0);
+
+            gl.viewport(6 * (gl.viewportWidth/8.0), 4*(gl.viewportHeight/7.0), gl.viewportWidth/8.0, gl.viewportHeight/7.0);
+            drawSecondPassBokeh(0.0, 1.0, 0.0, 0.0);
+
+            gl.viewport(7 * (gl.viewportWidth/8.0), 4*(gl.viewportHeight/7.0),  gl.viewportWidth/8.0, gl.viewportHeight/7.0);
+            drawSecondPassBokeh(0.0, 0.0, 0.0, 1.0);
 
         }
 
 		var currentlyPressedKeys = {};
 
 		function handleKeyDown(event) {
-			console.log(event.keyCode);
+			//console.log(event.keyCode);
 			currentlyPressedKeys[event.keyCode] = true;
 		}
 
@@ -4020,11 +4039,11 @@
 				uFocalDistance -= 10;
 			}
             if (currentlyPressedKeys[84]) {
-                bokehStrength += 0.01;
+                bokehStrength += 0.1;
             }
             if (currentlyPressedKeys[71]) {
                 if (bokehStrength >= 0.01) {
-                    bokehStrength -= 0.01;    
+                    bokehStrength -= 0.1;    
                 } else {
                     bokehStrength = 0.0;
                 }
@@ -4032,45 +4051,28 @@
 
             if (currentlyPressedKeys[85]) {
                 Aperture += 0.01;
-                console.log("Aperture: "+Aperture);
             }
             if (currentlyPressedKeys[74]) {
                 Aperture -= 0.01;
-                console.log("Aperture: "+Aperture);
             }
 
             if (currentlyPressedKeys[73]) {
                 if (_focalPlane < 0.99) {
                     _focalPlane += 0.001;    
                 }
-                
-                console.log("_focalPlane: "+_focalPlane);
             }
             if (currentlyPressedKeys[75]) {
                 if (_focalPlane > 0.0) {
                     _focalPlane -= 0.001;
                 }
-                console.log("_focalPlane: "+_focalPlane);
             }
 
             if (currentlyPressedKeys[79]) {
-                focalLength += 0.01;
-                console.log("focalLength: "+focalLength);
+                focalLength += 0.1;
             }
             if (currentlyPressedKeys[76]) {
-                focalLength -= 0.01;
-                console.log("focalLength: "+focalLength);
+                focalLength -= 0.1;
             }
-
-            if (currentlyPressedKeys[32]) {
-                console.log("CAMERA STATS: ");
-                console.log("Aperture: "+Aperture);
-                console.log("focalPlane: "+_focalPlane);
-                console.log("focalLength: "+focalLength);
-                console.log("-*-=*=-*-=*=-*-=*=-*-=*=-*-=*=-*-=*=-*-=*=");
-            }
-            //console.log("BOKEH STRENGTH: " + bokehStrength);
-            //console.log(elapsed);
 		}
 
 		function handleMouseMove(event) {
@@ -4401,6 +4403,10 @@
                 <div>Aperture: <span id="aperture"></span></div>
                 <div>Focal Plane: <span id="focalplane"></span></div>
                 <div>Focal Length: <span id="focallength"></span></div>
+                <div>CoCScale: <span id="cocscale"></span></div>
+                <div>CoCBias: <span id="cocbias"></span></div>
+                <div>CoCScale + CoCBias: <span id="cocdiff"></span></div>
+                <div>Bokeh Strength: <span id="bokehstrength"></span></div>
             </div>
         </div>
 	</body>
