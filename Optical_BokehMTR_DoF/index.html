@@ -425,6 +425,8 @@
 
         uniform float uTime;
 
+        uniform float farBlurdistancelimit;
+
         //#define USE_RANDOM 
 
         const int NUM_SAMPLES = 8;
@@ -499,7 +501,7 @@
             //Check if the CoC of the sampled pixel is big enough to scatter here, and 
             //the sampled pixel is in front of the focal plane or
             //this pixel is behind the focal plane and the sampled pixel isn't too far behind it.
-            if ((absCoC > stepDistance) && (blurNear || (baseCoC > 0.0 && absCoC < baseCoC * 2.0)))
+            if ((absCoC > stepDistance) && (blurNear || (baseCoC > 0.0 && absCoC < baseCoC * farBlurdistancelimit)))
             {
                 // Sort out the CoC of the blurred image, by taking the biggest CoC to maintain the 
                 // hexagon shape in the second pass.
@@ -564,6 +566,8 @@
         uniform float drawFirstBlurCoC;
         uniform float drawSecondBlur;
         uniform float drawSecondBlurCoC;
+
+        uniform float farBlurdistancelimit;
 
         //#define USE_RANDOM 
 
@@ -660,7 +664,7 @@
             //Check if the CoC of the sampled pixel is big enough to scatter here, and 
             //the sampled pixel is in front of the focal plane or
             //this pixel is behind the focal plane and the sampled pixel isn't too far behind it.
-            if ((absCoC > stepDistance) && (blurNear || (baseCoC > 0.0 && absCoC < baseCoC * 2.0)))
+            if ((absCoC > stepDistance) && (blurNear || (baseCoC > 0.0 && absCoC < baseCoC * farBlurdistancelimit)))
             {
                 // Sort out the CoC of the blurred image, by taking the biggest CoC to maintain the 
                 // hexagon shape in the second pass.

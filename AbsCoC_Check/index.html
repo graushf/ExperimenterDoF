@@ -472,10 +472,10 @@
             //gl_FragData[1] = vec4(0.92, 0.47, 0.92, 1.0);
 
             // For the combined term, set the CoC to the blurriest of the two inputs
-            // if (abs(outputColor.w) > abs(outputColor2.w))
-            // {
-            //     outputColor2.w = outputColor.w;
-            // }
+            if (abs(outputColor.w) > abs(outputColor2.w))
+            {
+                outputColor2.w = outputColor.w;
+            }
 
             // Debug
             //outputColor.w = -0.7;
@@ -492,7 +492,6 @@
 
         float GatherAndApply(vec2 uv, float baseCoC, vec4 currCol, float stepDistance, inout vec4 outColor) {
             
-
             outColor = currCol;
             vec4 col = texture2D(uSampler, uv);
 
@@ -500,20 +499,48 @@
 
             // CoC < 0 means the pixel is in front of the focal plane.
             bool blurNear = col.w < 0.0;
-            float absCoC = abs(bokehStrength);
+            float absCoC = abs(col.w);
             
-            blurNear = true;
-            // Now accumulate the colour. Allow partial sampling at the pixel boundary for smootheness. 
-            if (blurNear) {
-                sampleFraction = clamp((absCoC - stepDistance) / OneOverScreenHeight, 0.0, 1.0);
-                sampleFraction = 1.0;
-                outColor.xyz += sampleFraction * col.xyz;    
-            } else {
-                sampleFraction = 0.0;
-            }
-            
+            //Check if the CoC of the sampled pixel is big enough to scatter here, and 
+            //the sampled pixel is in front of the focal plane or
+            //this pixel is behind the focal plane and the sampled pixel isn't too far behind it.
+            if ((absCoC > stepDistance) && (blurNear || (baseCoC > 0.0 && absCoC < baseCoC * 2.0)))
+            {
+                // Sort out the CoC of the blurred image, by taking the biggest CoC to maintain the 
+                // hexagon shape in the second pass.
+                // Near-blurred pixels should continue to blur over far pixels. Far pixels don't blur
+                // over near pixels so that case can be ignored.
+                if (blurNear) {
+                    if (outColor.w < 0.0)
+                    {
+                        // This pixel is already near-blurred, so see if the sampled CoC is any bigger.
+                        outColor.w = min(outColor.w, col.w);
+                    } 
+                    else 
+                    {
+                        // This pixel is behind the focal plane, so only continue with the near-blur if 
+                        // that is stronger. Going to get artifacts either way on depth edges with different
+                        // coloured pixels.
+                        if (-col.w > outColor.w)
+                        {
+                            outColor.w = col.w;
+                        }
+                    }
+                }
 
-            return sampleFraction;
+                // Now accumulate the colour. Allow partial sampling at the pixel boundary for smootheness. 
+                float sampleFraction = clamp((absCoC - stepDistance) / OneOverScreenHeight, 0.0, 1.0);
+                outColor.xyz += sampleFraction * col.xyz;
+
+                return sampleFraction;
+            }
+
+            // float sampleFraction = clamp((absCoC - stepDistance) / OneOverScreenHeight, 0.0, 1.0);
+            // outColor.xyz += sampleFraction * col.xyz;
+            // return sampleFraction;
+
+            // No colour added.
+            return 0.0;
         }
 
         // note: uniform pdf ranf [0;1[
@@ -641,19 +668,47 @@
             vec4 col = texture2D(texture, uv);
             // CoC < 0 means the pixel is in front of the focal plane.
             bool blurNear = col.w < 0.0;
-            //float absCoC = abs(col.w);
-            float absCoC = abs(bokehStrength);
+            float absCoC = abs(col.w);
 
-            blurNear = true;
-            if (blurNear) {
-                sampleFraction = clamp((absCoC - stepDistance) / OneOverScreenHeight, 0.0, 1.0);
-                sampleFraction = 1.0;
-                outColor.xyz += sampleFraction * col.xyz;    
-            } else {
-                sampleFraction = 0.0;
+            //Check if the CoC of the sampled pixel is big enough to scatter here, and 
+            //the sampled pixel is in front of the focal plane or
+            //this pixel is behind the focal plane and the sampled pixel isn't too far behind it.
+            if ((absCoC > stepDistance) && (blurNear || (baseCoC > 0.0 && absCoC < baseCoC * 2.0)))
+            {
+                // Sort out the CoC of the blurred image, by taking the biggest CoC to maintain the 
+                // hexagon shape in the second pass.
+                // Near-blurred pixels should continue to blur over far pixels. Far pixels don't blur
+                // over near pixels so that case can be ignored.
+                if (blurNear) {
+                    if (outColor.w < 0.0)
+                    {
+                        // This pixels is already near-blurred, so see if the sampled CoC is any bigger
+                        outColor.w = min(outColor.w, col.w);
+                    }
+                    else {
+                        // This pixel is behind the focal plane, so only continue with the near-blur if 
+                        // that is stronger. Going to get artifacts either way on depth edges with different
+                        // coloured pixels.
+                        if (-col.w > outColor.w)
+                        {
+                            outColor.w = col.w;
+                        }
+                    }
+                }
+
+                // Now accumulate the colour. Allow partial sampling at the pixel boundary for smoothness
+                float sampleFraction = clamp((absCoC - stepDistance) / OneOverScreenHeight, 0.0, 1.0);
+                outColor.xyz += sampleFraction * col.xyz;
+
+                return sampleFraction;
             }
 
-            return sampleFraction;
+            //float sampleFraction = clamp((absCoC - stepDistance) / OneOverScreenHeight, 0.0, 1.0);
+            //outColor.xyz += sampleFraction * col.xyz;
+            //return sampleFraction;
+
+            // No colour added
+            return 0.0;
         }
 
         // note: uniform pdf ranf [0;1[
@@ -795,7 +850,7 @@
             colChannel1.w = clamp(1000.0 * abs(colChannel1.w) - 0.001, 0.0, 1.0);
 
             vec4 finalCol = mix(colChannel0, colChannel1, colChannel1.w);
-            gl_FragColor = vec4(colChannel1.xyz, 1.0); return;
+            //gl_FragColor = vec4(colChannel1.xyz, 1.0); return;
             gl_FragColor = finalCol;
             //gl_FragColor = texture2D(uChannelOriginalScene, vTextureCoord);
             //gl_FragColor = texture2D(uChannelBluredScene, vTextureCoord);
@@ -1016,6 +1071,8 @@
 
         var CoCScale;
         var CoCBias;
+
+        var farBlurdistancelimit = 2.0;
 
 		function initGL(canvas) {
 			try {
@@ -3592,6 +3649,8 @@
 
             shaderProgramFirstPassBlur.timeUnifom = gl.getUniformLocation(shaderProgramFirstPassBlur, "uTime");
 
+            shaderProgramFirstPassBlur.farBlurdistancelimitUniform = gl.getUniformLocation(shaderProgramFirstPassBlur, "farBlurdistancelimit");
+
             //shaderProgramFirstPassBlur.drawInputCoC = gl.getUniformLocation(shaderProgramFirstPassBlur, "drawInputCoC");
 
             gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
@@ -3611,6 +3670,8 @@
             gl.uniform1f(shaderProgramFirstPassBlur.bokehStrengthUniform, bokehStrength);
 
             gl.uniform1f(shaderProgramFirstPassBlur.timeUniform, elapsed);
+
+            gl.uniform1f(shaderProgramFirstPassBlur.farBlurdistancelimitUniform, farBlurdistancelimit);
 
             //gl.uniform1f(shaderProgramFirstPassBlur.drawInputCoC, drawInputCoC);
 
@@ -3637,7 +3698,9 @@
 
             shaderProgramSecondPassBlur.bokehStrengthUniform = gl.getUniformLocation(shaderProgramSecondPassBlur, "bokehStrength");
 
-            shaderProgramFirstPassBlur.timeUnifom = gl.getUniformLocation(shaderProgramFirstPassBlur, "uTime");
+            shaderProgramSecondPassBlur.timeUnifom = gl.getUniformLocation(shaderProgramFirstPassBlur, "uTime");
+
+            shaderProgramSecondPassBlur.farBlurdistancelimitUniform = gl.getUniformLocation(shaderProgramSecondPassBlur, "farBlurdistancelimit");
 
 
             gl.bindBuffer(gl.ARRAY_BUFFER, screenFillingVertexPositionBuffer);
@@ -3658,7 +3721,7 @@
 
             gl.uniform1f(shaderProgramSecondPassBlur.bokehStrengthUniform, bokehStrength);
 
-            gl.uniform1f(shaderProgramFirstPassBlur.timeUniform, elapsed);
+            gl.uniform1f(shaderProgramSecondPassBlur.timeUniform, elapsed);
 
             shaderProgramSecondPassBlur.drawFirstBlurUniform = gl.getUniformLocation(shaderProgramSecondPassBlur, "drawFirstBlur");
             shaderProgramSecondPassBlur.drawFirstBlurCoCUniform = gl.getUniformLocation(shaderProgramSecondPassBlur, "drawFirstBlurCoC");
@@ -3673,6 +3736,8 @@
             gl.uniform1f(shaderProgramSecondPassBlur.drawSecondBlurCoCUniform, drawSecondBlurCoC);
 
             gl.uniform1f(shaderProgramSecondPassBlur.multiplyColor, multiplyColor);
+
+            gl.uniform1f(shaderProgramSecondPassBlur.farBlurdistancelimitUniform, farBlurdistancelimit);
 
             gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, screenFillingIndexBuffer);
             gl.drawElements(gl.TRIANGLES, screenFillingIndexBuffer.numItems, gl.UNSIGNED_SHORT, 0);
@@ -3719,7 +3784,6 @@
             auxFocalPlane = _focalPlane*zFar;
 
             CoCScale = (Aperture * focalLength * auxFocalPlane * (zFar - zNear)) / ((auxFocalPlane - focalLength) * zNear * zFar);
-            console.log(CoCScale);
             CoCBias = (Aperture * focalLength * (zNear - auxFocalPlane)) / ((auxFocalPlane - focalLength) * zNear);
 
             gl.uniform1f(shaderProgramCoCSizePass.CoCScaleUniform, CoCScale);
@@ -3983,7 +4047,7 @@
 		var currentlyPressedKeys = {};
 
 		function handleKeyDown(event) {
-			//console.log(event.keyCode);
+			console.log(event.keyCode);
 			currentlyPressedKeys[event.keyCode] = true;
 		}
 
@@ -4063,6 +4127,14 @@
             }
             if (currentlyPressedKeys[76]) {
                 focalLength -= 0.1;
+            }
+
+            if (currentlyPressedKeys[89]) {
+                farBlurdistancelimit += 0.01;
+            }
+
+            if (currentlyPressedKeys[72]) {
+                farBlurdistancelimit -= 0.01;
             }
 		}
 
@@ -4398,6 +4470,7 @@
                 <div>CoCBias: <span id="cocbias"></span></div>
                 <div>CoCScale + CoCBias: <span id="cocdiff"></span></div>
                 <div>Bokeh Strength: <span id="bokehstrength"></span></div>
+                <div>Far Blur Distance Limit: <span id="farblurdistancelimit"></span></div>
             </div>
         </div>
 	</body>
