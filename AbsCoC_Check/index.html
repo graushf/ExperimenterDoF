@@ -368,22 +368,19 @@
                 vec3 vSample = texture2D(uSampler, vTextureCoord).rgb;
                 gl_FragColor = vec4(vSample, 1.0);
 
-                if (drawCoC == 1.0) {
-                    vec4 vSample = texture2D(uSampler, vTextureCoord);
-                    if (vSample.w < 0.0) {
-                        vSample.w = abs(vSample.w);
-                        gl_FragColor = vec4(vSample.w, 0.0, 0.0, 1.0); 
-                        if (multiplyColor > 0.0) {
-                            gl_FragColor.x *= multiplyColor;
-                        }
-                        return;
-                    } else {
-                        gl_FragColor = vec4(0.0, 0.0, vSample.w, 1.0);
-                        if (multiplyColor > 0.0) {
-                            gl_FragColor.z *= multiplyColor;
-                        }
-                        return;
+                if (drawCoC != 0.0) {
+
+                    float col = texture2D(uSampler, vTextureCoord).w;
+                    if (col < 0.0) {
+                        gl_FragColor = vec4(abs(col), 0.0, 0.0, 1.0);
+                    } 
+                    else
+                    {
+                        gl_FragColor = vec4(0.0, 0.0, col, 1.0);
                     }
+
+                    gl_FragColor *= multiplyColor;
+                    return;
                 }
 
                 if (normColor == 1.0) {
@@ -479,6 +476,12 @@
             // {
             //     outputColor2.w = outputColor.w;
             // }
+
+            // Debug
+            //outputColor.w = -0.7;
+            //outputColor2.w = -0.7;
+            //outputColor = texture2D(uSampler, vTextureCoord);
+            //outputColor2 = texture2D(uSampler, vTextureCoord);
 
             gl_FragData[0] = outputColor;
             gl_FragData[1] = outputColor2;
@@ -590,15 +593,15 @@
                 gl_FragColor = vec4(outputColor0.xyz, 1.0); return;
             }
             if (drawFirstBlurCoC != 0.0) {
-                if (outputColor0.w < 0.0) {
-                    outputColor0.w = abs(outputColor0.w);
-                    gl_FragColor = vec4(outputColor0.w, 0.0, 0.0, 1.0);
-                } else {
-                    gl_FragColor = vec4(0.0, 0.0, outputColor0.w, 1.0);
+                gl_FragColor = vec4(0.0, 0.0, 0.0, 1.0); 
+                float col = texture2D(BlurPass1_0, vTextureCoord).w; 
+                if (col < 0.0) {
+                    gl_FragColor = vec4(abs(col), 0.0, 0.0, 1.0);
                 }
-                if (multiplyColor != 0.0) {
-                    gl_FragColor.xyz *= multiplyColor;
+                else {
+                    gl_FragColor = vec4(0.0, 0.0, col, 1.0);
                 }
+                gl_FragColor *= multiplyColor;
                 return;
             }
             if (drawSecondBlur != 0.0) {
@@ -607,15 +610,15 @@
                 gl_FragColor = vec4(outputColor1.xyz/2.0, 1.0); return;
             }
             if (drawSecondBlurCoC != 0.0) {
-                if (outputColor1.w < 0.0) {
-                    outputColor1.w = abs(outputColor1.w);
-                    gl_FragColor = vec4(outputColor1.w, 0.0, 0.0, 1.0);
-                } else {
-                    gl_FragColor = vec4(0.0, 0.0, outputColor1.w, 1.0);
+                gl_FragColor = vec4(0.0, 0.0, 0.0, 1.0); 
+                float col = texture2D(BlurPass1_1, vTextureCoord).w; 
+                if (col < 0.0) {
+                    gl_FragColor = vec4(abs(col), 0.0, 0.0, 1.0);
                 }
-                if (multiplyColor != 0.0) {
-                    gl_FragColor.xyz *= multiplyColor;
+                else {
+                    gl_FragColor = vec4(0.0, 0.0, col, 1.0);
                 }
+                gl_FragColor *= multiplyColor;
                 return;
             }
 
@@ -673,7 +676,6 @@
             float z = gl_FragCoord.z;
             //float z = uNear * uFar / (uFar - gl_FragCoord.z*(uFar - uNear));
             gl_FragColor = vec4(vec3(z), 1.0);
-            //gl_FragColor = vec4(1.0, 0.0, 0.0, 1.0);
         }
     </script>
 
@@ -713,9 +715,11 @@
             // Get CoCScale and CoCBias from aperture, focal length, focal plane and 
             // cam near/far, as per equations
             outCol.w = (CoCScale * outCol.w) + CoCBias; //Implementation Purple Space
+            //outCol.w = -0.5;
             //outCol.w = abs(outCol.w * CoCScale + CoCBias); Dice Paper
             //outCol.w = outCol.w * CoCScale  + 0.0;
             gl_FragColor = outCol;
+            //gl_FragColor = vec4(1.0, 0.0, 1.0, 1.0);
             //gl_FragColor = vec4(outCol.w, 0.0, 0.0, 1.0);
             //gl_FragColor = vec4(aux, 0.0, 0.0, 1.0);
         }
@@ -732,10 +736,25 @@
 
         void main(void) {
 
-            gl_FragColor = vec4(1.0, 0.0, 0.0, 1.0);
+            gl_FragColor = vec4(0.0, 1.0, 0.0, 1.0);
             if (uDrawBorder == 0) {
                 float col = texture2D(inputChannel, vTextureCoord).w;
-                gl_FragColor = vec4(col, col, col, 1.0);
+                if (col < 0.0) {
+                    gl_FragColor = vec4(abs(col), 0.0, 0.0, 1.0);
+                } 
+                else
+                {
+                    gl_FragColor = vec4(0.0, 0.0, col, 1.0);
+                }
+                // } else if {
+                //     gl_FragColor = vec4(0.0, 0.0, col, 1.0);
+                // }
+                //gl_FragColor = vec4(col, col, col, 1.0);
+                
+                //gl_FragColor = vec4(col, col, col, 1.0);
+
+                gl_FragColor.xyz *= 50.0;
+                
             } else {
                 gl_FragColor = vec4(0.46, 0.71, 0.0, 1.0);
             }
@@ -3553,7 +3572,7 @@
 
 		}
 
-        function drawFirstPassBokeh() {
+        function drawFirstPassBokeh(drawInputCoC) {
             gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
 
             gl.useProgram(shaderProgramFirstPassBlur);
@@ -3573,6 +3592,8 @@
 
             shaderProgramFirstPassBlur.timeUnifom = gl.getUniformLocation(shaderProgramFirstPassBlur, "uTime");
 
+            //shaderProgramFirstPassBlur.drawInputCoC = gl.getUniformLocation(shaderProgramFirstPassBlur, "drawInputCoC");
+
             gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
 
             gl.bindBuffer(gl.ARRAY_BUFFER, screenFillingVertexPositionBuffer);
@@ -3590,6 +3611,8 @@
             gl.uniform1f(shaderProgramFirstPassBlur.bokehStrengthUniform, bokehStrength);
 
             gl.uniform1f(shaderProgramFirstPassBlur.timeUniform, elapsed);
+
+            //gl.uniform1f(shaderProgramFirstPassBlur.drawInputCoC, drawInputCoC);
 
             gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, screenFillingIndexBuffer);
             gl.drawElements(gl.TRIANGLES, screenFillingIndexBuffer.numItems, gl.UNSIGNED_SHORT, 0);
@@ -3809,9 +3832,9 @@
             gl.bindBuffer(gl.ARRAY_BUFFER, screenFillingTextureCoordBuffer);
             gl.vertexAttribPointer(shaderProgramDebugCoC.textureCoordAttribute, screenFillingTextureCoordBuffer.itemSize, gl.FLOAT, false, 0, 0);
 
-            //gl.activeTexture(gl.TEXTURE0);
-            //gl.bindTexture(gl.TEXTURE_2D, textureFramebufferCoCSize);
-            //gl.uniform1i(shaderProgramDebugCoC.samplerUniform, 0);
+            gl.activeTexture(gl.TEXTURE0);
+            gl.bindTexture(gl.TEXTURE_2D, textureFramebufferCoCSize);
+            gl.uniform1i(shaderProgramDebugCoC.samplerUniform, 0);
 
             mat4.identity(mMatrix);
             var aux = mat4.create();
@@ -3871,7 +3894,7 @@
             ];
             ext3.drawBuffersWEBGL(bufferList);
 
-            drawFirstPassBokeh();
+            drawFirstPassBokeh(0.0);
 
             gl.bindFramebuffer(gl.FRAMEBUFFER, framebufferApplyDoFPass);
             gl.viewport(0, 0, gl.viewportWidth, gl.viewportHeight);
@@ -3893,40 +3916,44 @@
             drawScreenTexture(textureFramebufferDepth, 1, 0.0, 0.0, 0.0);
 
             gl.viewport(3 * (gl.viewportWidth/8.0), 5*(gl.viewportHeight/7.0), gl.viewportWidth/8.0, gl.viewportHeight/7.0);
-            drawScreenTexture(textureFramebufferCoCSize, 1, 0.0, 0.0, 0.0);
+            drawScreenTexture(textureFramebufferSetupScene, 1, 0.0, 0.0, 0.0);
+
+            //drawScreenTexture(textureFramebufferCoCSize, 1, 0.0, 0.0, 0.0);
 
             gl.viewport(3 * (gl.viewportWidth/8.0), 4*(gl.viewportHeight/7.0), gl.viewportWidth/8.0, gl.viewportHeight/7.0);
+            //drawScreenTexture(textureFramebufferCoCSize, 1, 0.0, 0.0, 0.0);
+
             //shaderProgramDebugCoC
             drawDebugPixelCoC(1);
-            //drawScreenTexture(textureFramebufferCoCSize);
+            //drawScreenTexture(textureFramebufferCoCSize, 0.0, 0.0, 0.0, 0.0);
 
             gl.viewport(0 * (gl.viewportWidth/8.0), 2*(gl.viewportHeight/7.0), 2*gl.viewportWidth/8.0, 2*gl.viewportHeight/7.0);
             drawScreenTexture(MRTfbData.t[0], 1, 0.0, 0.0, 0.0);
             //MRTfbData.t[0]
 
             gl.viewport(0 * (gl.viewportWidth/8.0), 0*(gl.viewportHeight/7.0), 2*gl.viewportWidth/8.0, 2*gl.viewportHeight/7.0);
-            drawScreenTexture(MRTfbData.t[0], 1, 1.0, 0.0, 0.0);
+            drawScreenTexture(MRTfbData.t[0], 1, 1.0, 0.0, 1.0);
 
 
             gl.viewport(2 * (gl.viewportWidth/8.0), 2*(gl.viewportHeight/7.0), 2*gl.viewportWidth/8.0, 2*gl.viewportHeight/7.0);
             drawScreenTexture(MRTfbData.t[1], 1, 0.0, 1.0, 0.0);
 
             gl.viewport(2 * (gl.viewportWidth/8.0), 0*(gl.viewportHeight/7.0), 2*gl.viewportWidth/8.0, 2*gl.viewportHeight/7.0);
-            drawScreenTexture(MRTfbData.t[1], 1, 1.0, 0.0, 0.0);
+            drawScreenTexture(MRTfbData.t[1], 1, 1.0, 0.0, 1.0);
 
 
             gl.viewport(4 * (gl.viewportWidth/8.0), 2*(gl.viewportHeight/7.0), 2*gl.viewportWidth/8.0, 2*gl.viewportHeight/7.0);
             drawSecondPassBokeh(1.0, 0.0, 0.0, 0.0, 0.0);
 
             gl.viewport(4 * (gl.viewportWidth/8.0), 0*(gl.viewportHeight/7.0), 2*gl.viewportWidth/8.0, 2*gl.viewportHeight/7.0);
-            drawSecondPassBokeh(0.0, 1.0, 0.0, 0.0, 0.0);
+            drawSecondPassBokeh(0.0, 1.0, 0.0, 0.0, 1.0);
 
 
             gl.viewport(6 * (gl.viewportWidth/8.0), 2*(gl.viewportHeight/7.0), 2*gl.viewportWidth/8.0, 2*gl.viewportHeight/7.0);
             drawSecondPassBokeh(0.0, 0.0, 1.0, 0.0, 0.0);
 
             gl.viewport(6 * (gl.viewportWidth/8.0), 0*(gl.viewportHeight/7.0), 2*gl.viewportWidth/8.0, 2*gl.viewportHeight/7.0);
-            drawSecondPassBokeh(0.0, 0.0, 0.0, 1.0, 0.0);
+            drawSecondPassBokeh(0.0, 0.0, 0.0, 1.0, 1.0);
 
 
 
@@ -3935,16 +3962,21 @@
             drawDebugPass1(); // Draws focal plane
 
             gl.viewport(4 * (gl.viewportWidth/8.0), 4*(gl.viewportHeight/7.0), gl.viewportWidth/8.0, gl.viewportHeight/7.0);
-            drawScreenTexture(MRTfbData.t[0], 1, 1.0, 0.0, 1000.0);
+            drawScreenTexture(MRTfbData.t[0], 1, 1.0, 0.0, 50.0);
 
             gl.viewport(5 * (gl.viewportWidth/8.0), 4*(gl.viewportHeight/7.0), gl.viewportWidth/8.0, gl.viewportHeight/7.0);
-            drawScreenTexture(MRTfbData.t[1], 1, 1.0, 0.0, 1000.0);
+            drawScreenTexture(MRTfbData.t[1], 1, 1.0, 0.0, 50.0);
 
             gl.viewport(6 * (gl.viewportWidth/8.0), 4*(gl.viewportHeight/7.0), gl.viewportWidth/8.0, gl.viewportHeight/7.0);
-            drawSecondPassBokeh(0.0, 1.0, 0.0, 0.0, 1000.0);
+            drawSecondPassBokeh(0.0, 1.0, 0.0, 0.0, 50.0);
 
             gl.viewport(7 * (gl.viewportWidth/8.0), 4*(gl.viewportHeight/7.0),  gl.viewportWidth/8.0, gl.viewportHeight/7.0);
-            drawSecondPassBokeh(0.0, 0.0, 0.0, 1.0, 1000.0);
+            drawSecondPassBokeh(0.0, 0.0, 0.0, 1.0, 50.0);
+
+
+            //gl.viewport(4 * (gl.viewportWidth/8.0), 5*(gl.viewportHeight/7.0), gl.viewportWidth/8.0, gl.viewportHeight/7.0);
+            //drawFirstPassBokeh(1.0);
+
 
         }
 
@@ -4151,6 +4183,7 @@
 
             gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, textureCoC, 0);
             gl.framebufferRenderbuffer(gl.FRAMEBUFFER, gl.DEPTH_ATTACHMENT, gl.RENDERBUFFER, renderbufferCoC);
+            textureFramebufferCoCSize = textureCoC;
 
 
 
@@ -4292,7 +4325,6 @@
 
 
             initShaderLightingPhong();
-
 
             initShadersRendToText();
             initShadersDepthObjectSpace();
