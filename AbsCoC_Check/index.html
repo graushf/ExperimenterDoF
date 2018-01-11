@@ -422,6 +422,8 @@
 
         uniform float uTime;
 
+        uniform  float farBlurdistancelimit;
+
         //#define USE_RANDOM 
 
         const int NUM_SAMPLES = 32;
@@ -449,7 +451,7 @@
 
             for (int i = 0; i < NUM_SAMPLES; i++)
             {
-                float stepDistance = (float(i) + 0.5) * OneOverScreenHeight * bokehStrength;
+                float stepDistance = (float(i) + 0.5) * OneOverScreenHeight;
 
                 // Vertical blur.
                 vec2 step0 = vec2(0.0, -1.0) * stepDistance;
@@ -461,8 +463,8 @@
             }
 
             //Normalize if any color was added. 
-            outputColor.xyz = sampleCount0 > 0.0 ? (outputColor.xyz / sampleCount0) : baseColour.xyz;
-            outputColor2.xyz = sampleCount1 > 0.0 ? (outputColor2.xyz / sampleCount1) : baseColour.xyz;
+            outputColor.xyz = sampleCount0 > 0.0 ? (outputColor.xyz / sampleCount0) : vec3(0.0, 1.0, 0.0)*baseColour.xyz;
+            outputColor2.xyz = sampleCount1 > 0.0 ? (outputColor2.xyz / sampleCount1) : vec3(0.0, 1.0, 0.0)*baseColour.xyz;
 
             // The second render target contains both of these added together. Don't divide 
             // by two here, as it'll be combined again and divided by three in the next pass.
@@ -500,21 +502,25 @@
             // CoC < 0 means the pixel is in front of the focal plane.
             bool blurNear = col.w < 0.0;
             float absCoC = abs(col.w);
+            absCoC *= 1.0;
             
             //Check if the CoC of the sampled pixel is big enough to scatter here, and 
             //the sampled pixel is in front of the focal plane or
             //this pixel is behind the focal plane and the sampled pixel isn't too far behind it.
-            if ((absCoC > stepDistance) && (blurNear || (baseCoC > 0.0 && absCoC < baseCoC * 2.0)))
+            // if ((absCoC > stepDistance) && (blurNear || (baseCoC > 0.0 && absCoC < baseCoC * farBlurdistancelimit)))
+            if ((absCoC > stepDistance) && (blurNear || (baseCoC > 0.0 )))
             {
                 // Sort out the CoC of the blurred image, by taking the biggest CoC to maintain the 
                 // hexagon shape in the second pass.
                 // Near-blurred pixels should continue to blur over far pixels. Far pixels don't blur
                 // over near pixels so that case can be ignored.
                 if (blurNear) {
+                    //outColor.xyz = vec3(1.0, 0.0, 0.0); return 1.0/float(NUM_SAMPLES);
                     if (outColor.w < 0.0)
                     {
                         // This pixel is already near-blurred, so see if the sampled CoC is any bigger.
                         outColor.w = min(outColor.w, col.w);
+                        //outColor.xyz = vec3(1.0, 0.0, 0.0); return 1.0/float(NUM_SAMPLES);
                     } 
                     else 
                     {
@@ -524,9 +530,13 @@
                         if (-col.w > outColor.w)
                         {
                             outColor.w = col.w;
+                            //outColor.xyz = vec3(0.0, 1.0, 0.0); return 1.0/float(NUM_SAMPLES);
                         }
+                        //outColor.xyz = vec3(0.0, 0.0, 1.0); return 1.0/float(NUM_SAMPLES);
                     }
                 }
+
+                //outColor.xyz = vec3(0.0, 1.0, 1.0); return 1.0/float(NUM_SAMPLES);
 
                 // Now accumulate the colour. Allow partial sampling at the pixel boundary for smootheness. 
                 float sampleFraction = clamp((absCoC - stepDistance) / OneOverScreenHeight, 0.0, 1.0);
@@ -534,6 +544,31 @@
 
                 return sampleFraction;
             }
+            if (!(absCoC > stepDistance)) {
+                //outColor.xyz = vec3(1.0, 0.0, 1.0); return 1.0/float(NUM_SAMPLES);
+            }
+            if (blurNear) {
+                //outColor.xyz = vec3(1.0, 0.0, 0.0); return 1.0/float(NUM_SAMPLES);
+            }
+            if (baseCoC > 0.0) {
+                //outColor.xyz = vec3(1.0, 1.0, 1.0); return 1.0/float(NUM_SAMPLES);
+            }
+
+            if (absCoC > 1.0) {
+                //outColor.xyz = vec3(1.0, 0.5, 0.0); return 1.0/float(NUM_SAMPLES);
+            }
+
+            if (baseCoC > 1.0) {
+                //outColor.xyz = vec3(0.0, 0.0, 1.0); return 1.0/float(NUM_SAMPLES);   
+            }
+
+            if (absCoC < baseCoC * farBlurdistancelimit) {
+                //outColor.xyz = vec3(0.0, 0.0, 0.0); return 1.0/float(NUM_SAMPLES);
+            }
+
+
+
+            //outColor.xyz = vec3(1.0, 1.0, 0.0); return 1.0/float(NUM_SAMPLES);
 
             // float sampleFraction = clamp((absCoC - stepDistance) / OneOverScreenHeight, 0.0, 1.0);
             // outColor.xyz += sampleFraction * col.xyz;
@@ -603,7 +638,7 @@
 
             for (int i = 0; i < NUM_SAMPLES; i++)
             {
-                float stepDistance = (float(i) + 0.5) * OneOverScreenHeight * bokehStrength;
+                float stepDistance = (float(i) + 0.5) * OneOverScreenHeight;
 
                 sampleCount0 += GatherAndApply(BlurPass1_0, vTextureCoord + step0 * stepDistance, baseColour.w, outputColor0, stepDistance, outputColor0);
                 sampleCount1 += GatherAndApply(BlurPass1_1, vTextureCoord + step1 * stepDistance, baseColour.w, outputColor1, stepDistance, outputColor1);
@@ -663,52 +698,53 @@
 
         float GatherAndApply(sampler2D texture, vec2 uv, float baseCoC, vec4 currCol, float stepDistance, inout vec4 outColor) {
 
-            float sampleFraction = 0.0;
+            //float sampleFraction = 0.0;
             outColor = currCol;
             vec4 col = texture2D(texture, uv);
             // CoC < 0 means the pixel is in front of the focal plane.
             bool blurNear = col.w < 0.0;
             float absCoC = abs(col.w);
+            absCoC *= 1.0;
 
             //Check if the CoC of the sampled pixel is big enough to scatter here, and 
             //the sampled pixel is in front of the focal plane or
             //this pixel is behind the focal plane and the sampled pixel isn't too far behind it.
-            if ((absCoC > stepDistance) && (blurNear || (baseCoC > 0.0 && absCoC < baseCoC * 2.0)))
-            {
-                // Sort out the CoC of the blurred image, by taking the biggest CoC to maintain the 
-                // hexagon shape in the second pass.
-                // Near-blurred pixels should continue to blur over far pixels. Far pixels don't blur
-                // over near pixels so that case can be ignored.
-                if (blurNear) {
-                    if (outColor.w < 0.0)
-                    {
-                        // This pixels is already near-blurred, so see if the sampled CoC is any bigger
-                        outColor.w = min(outColor.w, col.w);
-                    }
-                    else {
-                        // This pixel is behind the focal plane, so only continue with the near-blur if 
-                        // that is stronger. Going to get artifacts either way on depth edges with different
-                        // coloured pixels.
-                        if (-col.w > outColor.w)
-                        {
-                            outColor.w = col.w;
-                        }
-                    }
-                }
+            // if ((absCoC*2.0 > stepDistance) && (blurNear || (baseCoC > 0.0 && absCoC < baseCoC * 2.0)))
+            // {
+            //     // Sort out the CoC of the blurred image, by taking the biggest CoC to maintain the 
+            //     // hexagon shape in the second pass.
+            //     // Near-blurred pixels should continue to blur over far pixels. Far pixels don't blur
+            //     // over near pixels so that case can be ignored.
+            //     if (blurNear) {
+            //         if (outColor.w < 0.0)
+            //         {
+            //             // This pixels is already near-blurred, so see if the sampled CoC is any bigger
+            //             outColor.w = min(outColor.w, col.w);
+            //         }
+            //         else {
+            //             // This pixel is behind the focal plane, so only continue with the near-blur if 
+            //             // that is stronger. Going to get artifacts either way on depth edges with different
+            //             // coloured pixels.
+            //             if (-col.w > outColor.w)
+            //             {
+            //                 outColor.w = col.w;
+            //             }
+            //         }
+            //     }
 
-                // Now accumulate the colour. Allow partial sampling at the pixel boundary for smoothness
-                float sampleFraction = clamp((absCoC - stepDistance) / OneOverScreenHeight, 0.0, 1.0);
-                outColor.xyz += sampleFraction * col.xyz;
+            //     // Now accumulate the colour. Allow partial sampling at the pixel boundary for smoothness
+            //     float sampleFraction = clamp((absCoC - stepDistance) / OneOverScreenHeight, 0.0, 1.0);
+            //     outColor.xyz += sampleFraction * col.xyz;
 
-                return sampleFraction;
-            }
+            //     return sampleFraction;
+            // }
 
-            //float sampleFraction = clamp((absCoC - stepDistance) / OneOverScreenHeight, 0.0, 1.0);
-            //outColor.xyz += sampleFraction * col.xyz;
-            //return sampleFraction;
+            float sampleFraction = clamp((absCoC - stepDistance) / OneOverScreenHeight, 0.0, 1.0);
+            outColor.xyz += sampleFraction * col.xyz;
+            return sampleFraction;
 
             // No colour added
-            return 0.0;
+            //return 0.0;
         }
 
         // note: uniform pdf ranf [0;1[
@@ -1064,10 +1100,10 @@
 
         var Aperture = 2.29; // 1.0 // 0.6 // Old: 0.6 
         var focalLength = 5.52; //Old: 0.021
-        var focalPlane = 136.0; //Old: 10.0
+        var focalPlane = 26.40; //Old: 10.0
 
         //var _focalPlane = 10.0;
-        var _focalPlane = 0.02;
+        var _focalPlane = 0.0034;
 
         var CoCScale;
         var CoCBias;
@@ -4094,13 +4130,13 @@
 				uFocalDistance -= 10;
 			}
             if (currentlyPressedKeys[84]) {
-                bokehStrength += 0.1;
+                bokehStrength += 10000*0.1;
             }
             if (currentlyPressedKeys[71]) {
                 if (bokehStrength >= 0.01) {
-                    bokehStrength -= 0.1;    
+                    bokehStrength -= 10000*0.1;
                 } else {
-                    bokehStrength = 0.0;
+                    bokehStrength = 10000*0.0;
                 }
             }
 
@@ -4113,12 +4149,12 @@
 
             if (currentlyPressedKeys[73]) {
                 if (_focalPlane < 0.99) {
-                    _focalPlane += 0.001;    
+                    _focalPlane += 0.0001;    
                 }
             }
             if (currentlyPressedKeys[75]) {
                 if (_focalPlane > 0.0) {
-                    _focalPlane -= 0.001;
+                    _focalPlane -= 0.0001;
                 }
             }
 
