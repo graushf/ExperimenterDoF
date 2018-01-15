@@ -1,4 +1,4 @@
-var FPSNode, ApertureNode, FocalPlaneNode, FocalLengthNode, CoCScaleNode, CoCBiasNode, CoCDiffNode, BokehStrengthNode, FarBlurLimitNode;
+var FPSNode, ApertureNode, FocalPlaneNode, FocalLengthNode, CoCScaleNode, CoCBiasNode, CoCDiffNode, BokehStrengthNode, FarBlurLimitNode, iterationBlurNode, enableIndIterNode;
 
 function initStatistics() {
 	var FPSElement = document.getElementById("time");
@@ -10,6 +10,8 @@ function initStatistics() {
 	var CoCDiffElement = document.getElementById("cocdiff");
 	var BokehStrengthElement = document.getElementById("bokehstrength");
 	var FarBlurLimitElement = document.getElementById("farblurdistancelimit");
+	var iterationElement = document.getElementById("indexiterationblur");
+	var enableIndividualIterationElement = document.getElementById("enableinditer");
 
 	FPSNode = document.createTextNode("");
 	ApertureNode = document.createTextNode("");
@@ -20,6 +22,8 @@ function initStatistics() {
 	CoCDiffNode = document.createTextNode("");
 	BokehStrengthNode = document.createTextNode("");
 	FarBlurLimitNode = document.createTextNode("");
+	iterationBlurNode = document.createTextNode("");
+	enableIndIterNode = document.createTextNode("");
 
 	FPSElement.appendChild(FPSNode);
 	ApertureElement.appendChild(ApertureNode);
@@ -30,6 +34,8 @@ function initStatistics() {
 	CoCDiffElement.appendChild(CoCDiffNode);
 	BokehStrengthElement.appendChild(BokehStrengthNode);
 	FarBlurLimitElement.appendChild(FarBlurLimitNode);
+	iterationElement.appendChild(iterationBlurNode);
+	enableIndividualIterationElement.appendChild(enableIndIterNode);
 }
 
 function handleStatistics() {
@@ -43,6 +49,8 @@ function handleStatistics() {
 	var cocdiff = CoCScale + CoCBias;
 	var bokehstrength = bokehStrength;
 	var farblurdistancelimit = farBlurdistancelimit;
+	var iteration = indexIterationBlur;
+	var enableinditer = enableIndividualIteration;
 
 	//angleNode.nodeValue = _deltaTime.toFixed(5); // 5 decimal values
 	FPSNode.nodeValue = _deltaTime.toFixed(0) + "FPS"; 	// 5 decimal values
@@ -54,4 +62,10 @@ function handleStatistics() {
 	CoCDiffNode.nodeValue = cocdiff.toFixed(2);
 	BokehStrengthNode.nodeValue = bokehstrength.toFixed(2);
 	FarBlurLimitNode.nodeValue = farblurdistancelimit.toFixed(2);
+	iterationBlurNode.nodeValue = iteration.toFixed(0);
+	if (enableinditer == true) {
+		enableIndIterNode.nodeValue = "true";
+	} else {
+		enableIndIterNode.nodeValue = "false";
+	}
 }

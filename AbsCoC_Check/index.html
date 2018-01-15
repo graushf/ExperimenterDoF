@@ -424,6 +424,8 @@
 
         uniform  float farBlurdistancelimit;
 
+        uniform int iterationSample;
+
         //#define USE_RANDOM 
 
         const int NUM_SAMPLES = 8;
@@ -433,7 +435,7 @@
 
         float GatherAndApply(vec2 uv, float baseCoC, vec4 currCol, float stepDistance, inout vec4 outColor);
         float GatherAndApplyDebug(vec2 uv, float baseCoC, vec4 currCol, float stepDistance, inout vec4 outColor);
-        float hash12n(vec2 p);
+        void debugIterationSamplePick();
 
         void main() {
             OneOverScreenWidth = 1.0/uResolution.x;
@@ -451,9 +453,10 @@
             float xStep = 0.866 * (OneOverScreenWidth/OneOverScreenHeight);
 
             for (int i = 0; i < NUM_SAMPLES; i++)
-            {
-                float stepDistance = (float(i) + 0.5) * OneOverScreenHeight;
-
+            {   
+                
+                float stepDistance = (float(i) + 0.5) * OneOverScreenHeight * bokehStrength;
+            
                 // Vertical blur.
                 vec2 step0 = vec2(0.0, -1.0) * stepDistance;
                 sampleCount0 += GatherAndApply(vTextureCoord + step0, baseColour.w, outputColor, stepDistance, outputColor);
@@ -461,6 +464,7 @@
                 // Diagonal blur
                 vec2 step1 = vec2(xStep, 0.5) * stepDistance;
                 sampleCount1 += GatherAndApply(vTextureCoord + step1, baseColour.w, outputColor2, stepDistance, outputColor2);
+                
             }
 
             //Normalize if any color was added. 
@@ -584,9 +588,6 @@
         }
 
 
-
-
-
         float GatherAndApply(vec2 uv, float baseCoC, vec4 currCol, float stepDistance, inout vec4 outColor) {
             
             outColor = currCol;
@@ -595,14 +596,16 @@
 
             // CoC < 0 means the pixel is in front of the focal plane.
             bool blurNear = col.w < 0.0;
-            float absCoC = abs(col.w);
+            float absCoC = abs(col.w) * 1.0 / 1.0;
             //absCoC *= 1.0;
             
             //Check if the CoC of the sampled pixel is big enough to scatter here, and 
             //the sampled pixel is in front of the focal plane or
             //this pixel is behind the focal plane and the sampled pixel isn't too far behind it.
             // if ((absCoC > stepDistance) && (blurNear || (baseCoC > 0.0 && absCoC < baseCoC * farBlurdistancelimit)))
-            if ((absCoC > stepDistance) && (blurNear || (baseCoC > 0.0 && absCoC < baseCoC * 2.0)))
+            //if ((absCoC > stepDistance) && (blurNear || (baseCoC > 0.0 && absCoC < baseCoC * 2.0)))
+            //if ((absCoC > stepDistance) && (blurNear || (baseCoC > 0.0)))
+            if (absCoC > stepDistance)
             {
                 // Sort out the CoC of the blurred image, by taking the biggest CoC to maintain the 
                 // hexagon shape in the second pass.
@@ -634,9 +637,52 @@
             }
 
             // No colour added.
+            outColor.xyz = vec3(1.0, 0.0, 0.0);
             return 0.0;
         }
 
+        void debugIterationSamplePick() {
+            if (iterationSample == 0) {
+                gl_FragData[0] = vec4(0.0, 0.0, 0.0, 1.0); 
+                gl_FragData[1] = vec4(0.0, 0.0, 0.0, 1.0); 
+                return;
+            }
+            if (iterationSample == 1) {
+                gl_FragData[0] = vec4(0.0, 0.0, 1.0, 1.0);
+                gl_FragData[1] = vec4(0.0, 0.0, 1.0, 1.0);
+                return;
+            }
+            if (iterationSample == 2) {
+                gl_FragData[0] = vec4(0.0, 1.0, 0.0, 1.0);
+                gl_FragData[1] = vec4(0.0, 1.0, 0.0, 1.0);
+                return;
+            }
+            if (iterationSample == 3) {
+                gl_FragData[0] = vec4(0.0, 1.0, 1.0, 1.0);
+                gl_FragData[1] = vec4(0.0, 1.0, 1.0, 1.0);
+                return;
+            }
+            if (iterationSample == 4) {
+                gl_FragData[0] = vec4(1.0, 0.0, 0.0, 1.0);
+                gl_FragData[1] = vec4(1.0, 0.0, 0.0, 1.0);
+                return;
+            }
+            if (iterationSample == 5) {
+                gl_FragData[0] = vec4(1.0, 0.0, 1.0, 1.0);
+                gl_FragData[1] = vec4(1.0, 0.0, 1.0, 1.0);
+                return;
+            }
+            if (iterationSample == 6) {
+                gl_FragData[0] = vec4(1.0, 1.0, 0.0, 1.0);
+                gl_FragData[1] = vec4(1.0, 1.0, 0.0, 1.0);
+                return;
+            }
+            if (iterationSample == 7) {
+                gl_FragData[0] = vec4(1.0, 1.0, 1.0, 1.0);
+                gl_FragData[1] = vec4(1.0, 1.0, 1.0, 1.0);
+                return;
+            }
+        }
     </script>
 
     <script id="BlurPass2" type="x-shader/x-fragment">
@@ -659,6 +705,8 @@
 
         uniform float multiplyColor;
 
+        uniform int iterationSample;
+
         //#define USE_RANDOM 
 
         const int NUM_SAMPLES = 8;
@@ -667,7 +715,7 @@
         float OneOverScreenHeight;
 
         float GatherAndApply(sampler2D texture, vec2 uv, float baseCoC, vec4 currCol, float stepDistance, inout vec4 outColor);
-        float hash12n(vec2 p);
+        void debugIterationSamplePick();
 
         void main(void) {
             vec4 finalCol;
@@ -690,10 +738,13 @@
 
             for (int i = 0; i < NUM_SAMPLES; i++)
             {
-                float stepDistance = (float(i) + 0.5) * OneOverScreenHeight;
+                
+                float stepDistance = (float(i) + 0.5) * OneOverScreenHeight * bokehStrength;
 
                 sampleCount0 += GatherAndApply(BlurPass1_0, vTextureCoord + step0 * stepDistance, baseColour.w, outputColor0, stepDistance, outputColor0);
+                
                 sampleCount1 += GatherAndApply(BlurPass1_1, vTextureCoord + step1 * stepDistance, baseColour.w, outputColor1, stepDistance, outputColor1);
+
             }
 
             // Normalize if any color was added. col0 is from sampling the single texture,
@@ -826,13 +877,15 @@
 
             // CoC < 0 means the pixel is in front of the focal plane.
             bool blurNear = col.w < 0.0;
-            float absCoC = abs(col.w);
+            float absCoC = abs(col.w) * 1.0 / 1.0;
             //absCoC *= 1.0;
             
             //Check if the CoC of the sampled pixel is big enough to scatter here, and 
             //the sampled pixel is in front of the focal plane or
             //this pixel is behind the focal plane and the sampled pixel isn't too far behind it.
-            if ((absCoC > stepDistance) && (blurNear || (baseCoC > 0.0 && absCoC < baseCoC * 2.0)))
+            //if ((absCoC > stepDistance) && (blurNear || (baseCoC > 0.0 && absCoC < baseCoC * 2.0)))
+            //if ((absCoC > stepDistance) && (blurNear || (baseCoC > 0.0)))
+            if (absCoC > stepDistance)
             {
                 // Sort out the CoC of the blurred image, by taking the biggest CoC to maintain the 
                 // hexagon shape in the second pass.
@@ -864,8 +917,45 @@
             }
 
             // No colour added
+            outColor.xyz = vec3(1.0, 0.0, 0.0);
             return 0.0;
         }
+
+        void debugIterationSamplePick() {
+            if (iterationSample == 0) {
+                gl_FragColor = vec4(0.0, 0.0, 0.0, 1.0);
+                return;
+            }
+            if (iterationSample == 1) {
+                gl_FragColor = vec4(0.0, 0.0, 1.0, 1.0);
+                return;
+            }
+            if (iterationSample == 2) {
+                gl_FragColor = vec4(0.0, 1.0, 0.0, 1.0);
+                return;
+            }
+            if (iterationSample == 3) {
+                gl_FragColor = vec4(0.0, 1.0, 1.0, 1.0);
+                return;
+            }
+            if (iterationSample == 4) {
+                gl_FragColor = vec4(1.0, 0.0, 0.0, 1.0);
+                return;
+            }
+            if (iterationSample == 5) {
+                gl_FragColor = vec4(1.0, 0.0, 1.0, 1.0);
+                return;
+            }
+            if (iterationSample == 6) {
+                gl_FragColor = vec4(1.0, 1.0, 0.0, 1.0);
+                return;
+            }
+            if (iterationSample == 7) {
+                gl_FragColor = vec4(1.0, 1.0, 1.0, 1.0);
+                return;
+            }
+        }
+
     </script>
 
     <script id="DepthPass-fs" type="x-shader/x-fragment">
@@ -999,8 +1089,9 @@
             // Blur texture is lower resolution so only blend it in if the pixel
             // is out of focus. Use a nice blend to avoid an obvious boundary
             
-
-            colChannel1.w = clamp(1000.0 * abs(colChannel1.w) - 0.001, 0.0, 1.0);
+            debugBlurTextureCoC(colChannel1);
+            //return;
+            //colChannel1.w = clamp(1000.0 * abs(colChannel1.w) - 0.001, 0.0, 1.0);
 
             vec4 finalCol = mix(colChannel0, colChannel1, colChannel1.w);
             gl_FragColor = finalCol;
@@ -1171,7 +1262,7 @@
 		var lastX;
 		var lastY;
 		var firstMouse = true;
-		var enableMouse = false;
+		var enableMouse = true;
 
 		// Deltatime
 		var deltaTime = 0.0;	// Time between current frame and last frame
@@ -1246,6 +1337,12 @@
 
         var framebufferSecondBlurPass;
         var textureSecondBlurrPass;
+
+        var downsampleCoefficient = 2.0;
+
+        var indexIterationBlur = 0.0;
+
+        var enableIndividualIteration = true;
 
 		function initGL(canvas) {
 			try {
@@ -2870,7 +2967,7 @@
         }
 
 		function drawScene(programToDraw) {
-			gl.viewport(0, 0, gl.viewportWidth, gl.viewportHeight);
+			//gl.viewport(0, 0, gl.viewportWidth, gl.viewportHeight);
 			gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
 
 			drawPlaneHorizon(programToDraw);
@@ -3824,6 +3921,8 @@
 
             shaderProgramFirstPassBlur.farBlurdistancelimitUniform = gl.getUniformLocation(shaderProgramFirstPassBlur, "farBlurdistancelimit");
 
+            shaderProgramFirstPassBlur.iterationSampleUniform = gl.getUniformLocation(shaderProgramFirstPassBlur, "iterationSample");
+
             //shaderProgramFirstPassBlur.drawInputCoC = gl.getUniformLocation(shaderProgramFirstPassBlur, "drawInputCoC");
 
             gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
@@ -3845,6 +3944,8 @@
             gl.uniform1f(shaderProgramFirstPassBlur.timeUniform, elapsed);
 
             gl.uniform1f(shaderProgramFirstPassBlur.farBlurdistancelimitUniform, farBlurdistancelimit);
+
+            gl.uniform1i(shaderProgramFirstPassBlur.iterationSampleUniform, indexIterationBlur.toFixed(0));
 
             //gl.uniform1f(shaderProgramFirstPassBlur.drawInputCoC, drawInputCoC);
 
@@ -3874,6 +3975,8 @@
             shaderProgramSecondPassBlur.timeUnifom = gl.getUniformLocation(shaderProgramFirstPassBlur, "uTime");
 
             shaderProgramSecondPassBlur.farBlurdistancelimitUniform = gl.getUniformLocation(shaderProgramSecondPassBlur, "farBlurdistancelimit");
+
+            shaderProgramSecondPassBlur.iterationSampleUniform = gl.getUniformLocation(shaderProgramSecondPassBlur, "iterationSample");
 
 
             gl.bindBuffer(gl.ARRAY_BUFFER, screenFillingVertexPositionBuffer);
@@ -3911,6 +4014,8 @@
             gl.uniform1f(shaderProgramSecondPassBlur.multiplyColor, multiplyColor);
 
             gl.uniform1f(shaderProgramSecondPassBlur.farBlurdistancelimitUniform, farBlurdistancelimit);
+
+            gl.uniform1i(shaderProgramSecondPassBlur.iterationSampleUniform, indexIterationBlur.toFixed(0));
 
             gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, screenFillingIndexBuffer);
             gl.drawElements(gl.TRIANGLES, screenFillingIndexBuffer.numItems, gl.UNSIGNED_SHORT, 0);
@@ -4108,18 +4213,18 @@
 
         function drawBokehEffects() {
             gl.bindFramebuffer(gl.FRAMEBUFFER, framebufferSetupSceneRGBA32F);
-            gl.viewport(0, 0, gl.viewportWidth, gl.viewportHeight);
+            gl.viewport(0, 0, gl.viewportWidth/downsampleCoefficient, gl.viewportHeight/downsampleCoefficient);
 
             //drawHDRBokehScene2D(shaderProgramLightingPhong);
             drawScene(shaderProgramLightingPhong);
 
             gl.bindFramebuffer(gl.FRAMEBUFFER, framebufferDepth);
-            gl.viewport(0, 0, gl.viewportWidth, gl.viewportHeight);
+            gl.viewport(0, 0, gl.viewportWidth/downsampleCoefficient, gl.viewportHeight/downsampleCoefficient);
 
             drawScene(shaderProgramDepthPass);
 
             gl.bindFramebuffer(gl.FRAMEBUFFER, framebufferCoCSize);
-            gl.viewport(0, 0, gl.viewportWidth, gl.viewportHeight);
+            gl.viewport(0, 0, gl.viewportWidth/downsampleCoefficient, gl.viewportHeight/downsampleCoefficient);
 
             drawCoCSizePass();
 
@@ -4134,7 +4239,7 @@
             drawFirstPassBokeh(0.0);
 
             gl.bindFramebuffer(gl.FRAMEBUFFER, framebufferApplyDoFPass);
-            gl.viewport(0, 0, gl.viewportWidth/2.0, gl.viewportHeight/2.0);
+            gl.viewport(0, 0, gl.viewportWidth/downsampleCoefficient, gl.viewportHeight/downsampleCoefficient);
 
             gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
 
@@ -4148,6 +4253,7 @@
             //gl.viewport(0, 2*gl.viewportHeight/5.0 , gl.viewportWidth/4.0 * 3.0, gl.viewportHeight/5.0*3.0); low canvas version
             gl.viewport(0, 4*gl.viewportHeight/7.0 , gl.viewportWidth/8.0 * 3.0, gl.viewportHeight/7.0*3.0);
             drawApplyDoFPass();
+            //drawScreenTexture(textureFramebufferApplyDoF, 0, 0.0, 0.0, 0.0);
 
             gl.viewport(3 * (gl.viewportWidth/8.0), 6*(gl.viewportHeight/7.0), gl.viewportWidth/8.0, gl.viewportHeight/7.0);
             drawScreenTexture(textureFramebufferDepth, 1, 0.0, 0.0, 0.0);
@@ -4309,6 +4415,17 @@
             if (currentlyPressedKeys[72]) {
                 farBlurdistancelimit -= 0.01;
             }
+
+            if (currentlyPressedKeys[90]) {
+                if (indexIterationBlur > 0.1) {
+                    indexIterationBlur -= 0.1;
+                }
+            }
+            if (currentlyPressedKeys[88]) {
+                if (indexIterationBlur < 7.0) {
+                    indexIterationBlur += 0.1;
+                }
+            }
 		}
 
 		function handleMouseMove(event) {
@@ -4348,11 +4465,11 @@
 			var texture = createAndSetupTexture();
 			textureFramebufferSetupScene = texture;
 
-			gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.viewportWidth, gl.viewportHeight, 0, gl.RGBA, gl.FLOAT, null);
+			gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.viewportWidth/downsampleCoefficient, gl.viewportHeight/downsampleCoefficient, 0, gl.RGBA, gl.FLOAT, null);
 
 			var renderbuffer = gl.createRenderbuffer();
 			gl.bindRenderbuffer(gl.RENDERBUFFER, renderbuffer);
-			gl.renderbufferStorage(gl.RENDERBUFFER, gl.DEPTH_COMPONENT16, gl.viewportWidth, gl.viewportHeight);
+			gl.renderbufferStorage(gl.RENDERBUFFER, gl.DEPTH_COMPONENT16, gl.viewportWidth/downsampleCoefficient, gl.viewportHeight/downsampleCoefficient);
 
 			
 			gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, texture, 0);
@@ -4397,15 +4514,14 @@
             framebufferDepth = gl.createFramebuffer();
             gl.bindFramebuffer(gl.FRAMEBUFFER, framebufferDepth);
 
-
             var textureDepth = createAndSetupTexture();
             textureFramebufferDepth = textureDepth;
 
-            gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.viewportWidth, gl.viewportHeight, 0, gl.RGBA, gl.FLOAT, null);
+            gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.viewportWidth/downsampleCoefficient, gl.viewportHeight/downsampleCoefficient, 0, gl.RGBA, gl.FLOAT, null);
 
             var renderbufferDepth = gl.createRenderbuffer();
             gl.bindRenderbuffer(gl.RENDERBUFFER, renderbufferDepth);
-            gl.renderbufferStorage(gl.RENDERBUFFER, gl.DEPTH_COMPONENT16, gl.viewportWidth, gl.viewportHeight);
+            gl.renderbufferStorage(gl.RENDERBUFFER, gl.DEPTH_COMPONENT16, gl.viewportWidth/downsampleCoefficient, gl.viewportHeight/downsampleCoefficient);
 
             gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, textureDepth, 0);
             gl.framebufferRenderbuffer(gl.FRAMEBUFFER, gl.DEPTH_ATTACHMENT, gl.RENDERBUFFER, renderbufferDepth);
@@ -4420,11 +4536,11 @@
             var textureCoC = createAndSetupTexture();
             textureFramebufferCoCSize = textureCoC;
 
-            gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.viewportWidth, gl.viewportHeight, 0, gl.RGBA, gl.FLOAT, null);
+            gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.viewportWidth/downsampleCoefficient, gl.viewportHeight/downsampleCoefficient, 0, gl.RGBA, gl.FLOAT, null);
 
             var renderbufferCoC = gl.createRenderbuffer();
             gl.bindRenderbuffer(gl.RENDERBUFFER, renderbufferCoC);
-            gl.renderbufferStorage(gl.RENDERBUFFER, gl.DEPTH_COMPONENT16, gl.viewportWidth, gl.viewportHeight);
+            gl.renderbufferStorage(gl.RENDERBUFFER, gl.DEPTH_COMPONENT16, gl.viewportWidth/downsampleCoefficient, gl.viewportHeight/downsampleCoefficient);
 
             gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, textureCoC, 0);
             gl.framebufferRenderbuffer(gl.FRAMEBUFFER, gl.DEPTH_ATTACHMENT, gl.RENDERBUFFER, renderbufferCoC);
@@ -4457,11 +4573,11 @@
             textureFramebufferApplyDoF = textureApplyDoF;
 
 
-            gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.viewportWidth/2.0, gl.viewportHeight/2.0, 0, gl.RGBA, gl.FLOAT, null);
+            gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.viewportWidth/downsampleCoefficient, gl.viewportHeight/downsampleCoefficient, 0, gl.RGBA, gl.FLOAT, null);
 
             var renderbufferApplyDoF = gl.createRenderbuffer();
             gl.bindRenderbuffer(gl.RENDERBUFFER, renderbufferApplyDoF);
-            gl.renderbufferStorage(gl.RENDERBUFFER, gl.DEPTH_COMPONENT16, gl.viewportWidth, gl.viewportHeight);
+            gl.renderbufferStorage(gl.RENDERBUFFER, gl.DEPTH_COMPONENT16, gl.viewportWidth/downsampleCoefficient, gl.viewportHeight/downsampleCoefficient);
 
             gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, textureApplyDoF, 0);
             gl.framebufferRenderbuffer(gl.FRAMEBUFFER, gl.DEPTH_ATTACHMENT, gl.RENDERBUFFER, renderbufferApplyDoF);
@@ -4527,7 +4643,7 @@
                 console.log("MAX_COLOR_ATTACHMENTS_WEBGL: "+gl.getParameter(ext3.MAX_COLOR_ATTACHMENTS_WEBGL));
                 console.log("MAX_DRAW_BUFFERS_WEBGL: " + gl.getParameter(ext3.MAX_DRAW_BUFFERS_WEBGL));
 
-                MRTfbData = create_framebuffer_MRT(gl.viewportWidth, gl.viewportHeight);
+                MRTfbData = create_framebuffer_MRT(gl.viewportWidth/downsampleCoefficient, gl.viewportHeight/downsampleCoefficient);
             }
         }
 
@@ -4661,6 +4777,8 @@
                 <div>CoCScale + CoCBias: <span id="cocdiff"></span></div>
                 <div>Bokeh Strength: <span id="bokehstrength"></span></div>
                 <div>Far Blur Distance Limit: <span id="farblurdistancelimit"></span></div>
+                <div>i iteration blur: <span id="indexiterationblur"></span></div>
+                <div>Enable ind.iter. blur: <span id="enableinditer"></span></div>
             </div>
         </div>
 	</body>
